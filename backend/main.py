@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from agent import create_agent
 from streaming import stream_agent_response
 
+vars = {}
 
 class ChatRequest(BaseModel):
     query: str
@@ -19,8 +20,9 @@ class ChatRequest(BaseModel):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize the agent on startup and clean up on shutdown."""
-    agent = create_agent()
-    yield {"agent": agent}
+    vars['agent'] = create_agent()
+    yield 
+    vars.clear()
 
 
 app = FastAPI(title="Deep Agent", lifespan=lifespan)
@@ -29,7 +31,7 @@ app = FastAPI(title="Deep Agent", lifespan=lifespan)
 @app.post("/ask", response_class=EventSourceResponse)
 async def ask(req: ChatRequest) -> AsyncIterable[ServerSentEvent]:
     """Stream the agent's response via Server-Sent Events."""
-    agent = app.state.agent
+    agent = vars['agent']
     config = {"configurable": {"thread_id": req.conv_id}}
     return stream_agent_response(agent, req.query, config)
 

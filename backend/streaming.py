@@ -51,7 +51,7 @@ async def stream_agent_response(
     event_id = 0
 
     # ── Start the multi-mode stream ────────────────────────────────
-    for chunk in agent.stream(
+    async for chunk in agent.*argsstream(
         {"messages": [HumanMessage(content=user_input)]},
         stream_mode=["updates", "messages", "custom"],
         subgraphs=True,
