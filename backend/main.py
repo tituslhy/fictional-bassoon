@@ -42,12 +42,13 @@ async def chat(request: ChatRequest):
 
     logger.info("received chat request for job_id=%s", request.job_id)
 
+    pubsub = await subscribe(request.job_id)
+    
     # 🚀 enqueue → RabbitMQ via Celery
     run_agent_task.delay(request.model_dump())
 
     async def event_generator():
         """Generator that yields ServerSentEvent objects from Redis pub/sub."""
-        pubsub = await subscribe(request.job_id)
 
         try:
             async for message in pubsub.listen():
