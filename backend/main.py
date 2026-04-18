@@ -39,13 +39,20 @@ async def chat(request: ChatRequest):
     until the agent signals done.
     """
     request = request.with_job_id()
+    if request.job_id is None:
+        raise RuntimeError("ChatRequest.with_job_id() did not assign a job_id")
 
     logger.info("received chat request for job_id=%s", request.job_id)
 
     pubsub = await subscribe(request.job_id)
-    
-    # 🚀 enqueue → RabbitMQ via Celery
-    run_agent_task.delay(request.model_dump())
+
+    try:
+        run_agent_task.delay(request.model_dump())
+    except Exception:
+        await pubsub.unsubscribe(f"stream:{request.job_id}")
+        await pubsub.close()
+        logger.exception("failed to enqueue chat task: job_id=%s", request.job_id)
+        raise
 
     async def event_generator():
         """Generator that yields ServerSentEvent objects from Redis pub/sub."""
