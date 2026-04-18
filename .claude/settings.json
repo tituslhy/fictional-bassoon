@@ -1,11 +1,13 @@
 {
   "permissions": {
     "allow": [
-      "Bash(ls*)",
-      "Bash(grep*)",
-      "Bash(npm test*)",
-      "Bash(pytest*)",
-      "Bash(uv add *)"
+      "Bash(uv:*)",
+      "Bash(uvicorn:*)",
+      "Bash(celery:*)",
+      "Bash(python:*)"
+    ],
+    "deny": [
+      "Bash(rm -rf:*)"
     ]
   }
 }

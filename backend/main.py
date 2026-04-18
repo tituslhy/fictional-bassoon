@@ -1,25 +1,16 @@
-"""
-FastAPI backend with streaming Deep Agent endpoint.
+"""FastAPI application with SSE chat and health endpoints."""
 
-Streams all token types (reasoning, tool calls, tool results, answer)
-as Server-Sent Events using FastAPI's native EventSourceResponse and ServerSentEvent.
-"""
-
-from collections.abc import AsyncIterable
+import json
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 
-from agent import get_agent
 from models import ChatRequest
-from streaming import stream_agent_events
+from redis_pubsub import subscribe
+from tasks import run_agent_task
 
-from dotenv import load_dotenv, find_dotenv
-
-_ = load_dotenv(find_dotenv())
-
-app = FastAPI(title="Deep Agent API", version="1.0.0")
+app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
@@ -30,13 +21,45 @@ app.add_middleware(
 
 
 @app.post("/chat", response_class=EventSourceResponse)
-async def chat(request: ChatRequest) -> AsyncIterable[ServerSentEvent]:
-    """Stream agent reasoning, tool calls, and final answer as SSE."""
-    agent = get_agent()
-    async for event in stream_agent_events(agent, request):
-        yield event
+async def chat(request: ChatRequest):
+    """Stream agent events via SSE.
+
+    Enqueues a Celery task to run the agent, then subscribes to the
+    corresponding Redis pub/sub channel and yields events to the client
+    until the agent signals done.
+    """
+    request = request.ensure_job_id()
+
+    # 🚀 enqueue → RabbitMQ via Celery
+    run_agent_task.delay(request.dict())
+
+    async def event_generator():
+        """Generator that yields ServerSentEvent objects from Redis pub/sub."""
+        pubsub = await subscribe(request.job_id)
+
+        try:
+            async for message in pubsub.listen():
+                if message["type"] != "message":
+                    continue
+
+                event = json.loads(message["data"])
+
+                yield ServerSentEvent(
+                    data=event["data"],
+                    event=event["event"],
+                )
+
+                if event["event"] == "done":
+                    break
+
+        finally:
+            await pubsub.unsubscribe(f"stream:{request.job_id}")
+            await pubsub.close()
+
+    return EventSourceResponse(event_generator())
 
 
 @app.get("/health")
-async def health() -> dict:
+async def health():
+    """Health check endpoint."""
     return {"status": "ok"}

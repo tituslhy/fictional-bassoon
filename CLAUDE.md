@@ -1,52 +1,33 @@
-# CLAUDE.md
+# fictional-bassoon
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+FastAPI SSE streaming backend for a LangGraph Deep Agent.
+Streams reasoning, tool calls, tool results, and final answer as SSE.
+Celery + Redis pub/sub bridges the async worker to the FastAPI response.
 
-## Project Overview
+## What this is NOT
+- Not a monolith — never consolidate logic into one file
+- Frontend is not yet developed — do not scaffold it
 
-fictional-bassoon is a FastAPI backend that exposes a streaming Deep Agent endpoint. An AI agent (built with LangGraph/LangChain) streams all token types—reasoning, tool calls, tool results, and final answer—as Server-Sent Events (SSE).
+## Structure
+- backend/ — all server code
+- frontend/ — empty, pending
 
-## Codebase Structure
-
-```
-fictional-bassoon/
-├── backend/
-│   ├── main.py            # FastAPI app: /chat (SSE) and /health endpoints
-│   ├── streaming.py       # SSE streaming utilities: converts LangGraph agent events to ServerSentEvent objects
-│   ├── models.py          # Pydantic models (ChatRequest with message + thread_id)
-│   ├── notebooks/
-│   │   └── test_stream.ipynb  # Interactive testing notebook
-│   ├── pyproject.toml     # UV-managed deps: deepagents, fastapi, langchain, langgraph, uvicorn
-│   ├── uv.lock
-│   └── .env               # TAVILY_API_KEY, OPENAI_API_KEY, LANGSMITH_*
-└── frontend/              # (empty)
-```
-
-### Key Architecture
-
-- `main.py` mounts the FastAPI app with a `/chat` POST endpoint that yields `ServerSentEvent` objects via `EventSourceResponse`.
-- `streaming.py` uses LangGraph's `astream()` with `stream_mode=["messages", "updates"]` and `subgraphs=True` to emit typed SSE events: `reasoning`, `tool_call`, `tool_result`, `answer`, `agent`, `error`, `done`.
-- `models.py` defines `ChatRequest` (message: str, thread_id: str) for the request payload.
-- The agent is instantiated via `get_agent()` from the `deepagents` package.
-
-## Development Commands
-
-```bash
-# Enter backend directory
+## Dev Commands
 cd backend
+uv sync                                          # install deps
+uvicorn main:app --reload                        # dev server
+celery -A celery_app worker --loglevel=info      # required for streaming
 
-# Install dependencies (requires UV: https://github.com/astral-sh/uv)
-uv sync
+## Prerequisites
+- RabbitMQ on localhost:5672 (Celery broker)
+- Redis on localhost:6379 (pub/sub bridge)
 
-# Run the dev server
-uvicorn main:app --reload
+## Code Standards
+- Google-style docstrings on all functions and classes
+- Comments explain WHY not WHAT — never comment self-evident code
+- Pydantic models for all request/response shapes
 
-# Run the testing notebook manually
-# Open backend/notebooks/test_stream.ipynb in an IDE or Jupyter
-```
-
-## Dependencies
-
-- Python 3.13 (set in `.python-version`)
-- Package manager: **uv** (see `uv.lock`)
-- Core deps: `deepagents>=0.5.3`, `fastapi>=0.136.0`, `langchain>=1.2.15`, `langgraph>=1.1.8`, `uvicorn[standard]>=0.44.0`
+## Rules
+See .claude/rules/ for detailed standards:
+- streaming-patterns.md — LangGraph streaming API contract (read this first)
+- architecture.md — file responsibilities and what lives where
