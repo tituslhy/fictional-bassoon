@@ -70,10 +70,11 @@ def _handle_message_chunk(token: AIMessageChunk):
         events.append({"event": "answer", "data": token.text})
 
     if token.tool_call_chunks:
-        events.append({
-            "event": "tool_call",
-            "data": _extract_tool_call_info(token),
-        })
+        for payload in _extract_tool_call_info(token):
+            events.append({
+                "event": "tool_call",
+                "data": json.dumps(payload),
+            })
 
     return events
 
@@ -98,14 +99,11 @@ def _handle_completed_message(message: AnyMessage):
     return events
 
 
-def _extract_tool_call_info(token: AIMessageChunk) -> str:
-    """Build a human-readable ``name(args)`` string from tool call chunk data."""
+def _extract_tool_call_info(token: AIMessageChunk) -> list:
+    """Build serializable tool call payloads from tool call chunk data."""
     parts = []
     for tc in token.tool_call_chunks:
         name = tc.get("name", "")
         args = tc.get("args", "")
-        if name:
-            parts.append(f"{name}({args})")
-        elif args:
-            parts.append(args)
-    return "".join(parts)
+        parts.append({"name": name, "args": args})
+    return parts
