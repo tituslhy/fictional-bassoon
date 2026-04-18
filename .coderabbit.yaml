@@ -1,0 +1,68 @@
+language: "en"
+
+reviews:
+  profile: chill
+  high_level_summary: true
+
+  auto_review:
+    enabled: true
+    drafts: false
+
+  path_instructions:
+    - path: "**/*.py"
+      instructions: |
+        Review all Python code thoroughly.
+
+        Focus on:
+        - Correctness, edge cases, and error handling
+        - Async vs sync correctness (especially event loops, awaits, blocking calls)
+        - FastAPI patterns, request handling, and response streaming (SSE/WebSockets)
+        - Concurrency issues, race conditions, and resource cleanup
+        - Proper use of typing and Pydantic models
+        - Code structure, readability, and modularity
+        - Security concerns (input validation, injections, secrets handling)
+        - Performance issues (unnecessary I/O, inefficient loops, repeated work)
+
+        Be opinionated where needed. Suggest concrete improvements, not just surface comments.
+
+    - path: "**/*.tsx"
+      instructions: |
+        Review all React TypeScript (.tsx) files.
+
+        Focus on:
+        - Component structure and separation of concerns
+        - State management and side effects (useEffect, async flows)
+        - Correct typing and TypeScript usage
+        - Performance (unnecessary re-renders, memoization, large component trees)
+        - UX for streaming data (e.g. SSE/WebSocket handling, loading states)
+        - Error handling and resilience in UI
+        - Accessibility and semantic HTML where applicable
+
+        Suggest improvements that make the UI more robust and maintainable.
+
+    - path: "docs/**/*.md"
+      instructions: |
+        Review documentation for clarity, accuracy, and completeness.
+        Ensure commands, configuration examples, and Kubernetes steps are correct and reproducible.
+
+    - path: "**/*.conf"
+      instructions: |
+        Carefully review NGINX configuration for correctness, security risks, and performance issues.
+        Check reverse proxy rules, upstream definitions, headers, and load balancing behaviour.
+
+    - path: "helm/**/*.yaml"
+      instructions: |
+        Review Helm templates and Kubernetes manifests for correctness.
+        Validate resource configuration, service ports, ingress rules, and environment variables.
+
+    - path: "**/*.yaml"
+      instructions: |
+        Validate YAML structure and configuration correctness.
+        Pay special attention to Kubernetes manifests, service definitions, and ingress configuration.
+
+  tools:
+    shellcheck:
+      enabled: true
+
+    markdownlint:
+      enabled: true
