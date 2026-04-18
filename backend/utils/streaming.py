@@ -44,7 +44,10 @@ async def stream_agent_events(agent, request) -> AsyncGenerator[dict, None]:
             elif chunk["type"] == "updates":
                 for source, update in chunk["data"].items():
                     if source in ("model", "tools"):
-                        for e in _handle_completed_message(update["messages"][-1]):
+                        messages = update.get("messages") if isinstance(update, dict) else None
+                        if not messages:
+                            continue
+                        for e in _handle_completed_message(messages[-1]):
                             yield e
 
     except Exception as exc:
