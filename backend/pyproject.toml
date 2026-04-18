@@ -1,5 +1,5 @@
 [project]
-name = "backend"
+name = "fictional-bassoon"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -10,8 +10,19 @@ dependencies = [
     "fastapi>=0.136.0",
     "httpx>=0.28.1",
     "langchain>=1.2.15",
+    "langchain-openai>=1.1.14",
     "langchain-tavily>=0.2.18",
     "langgraph>=1.1.8",
+    "langgraph-checkpoint-postgres>=3.0.5",
+    "mypy>=1.20.1",
+    "pytest>=9.0.3",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0.0",
     "redis>=7.4.0",
+    "tox>=4.53.0",
     "uvicorn[standard]>=0.44.0",
 ]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

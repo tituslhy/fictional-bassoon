@@ -1,8 +1,11 @@
 """Convert LangGraph agent events into typed SSE event dicts."""
 
 import json
+import logging
 from collections.abc import AsyncGenerator
 from langchain.messages import AIMessage, AIMessageChunk, AnyMessage, ToolMessage
+
+logger = logging.getLogger("backend")
 
 
 async def stream_agent_events(agent, request) -> AsyncGenerator[dict, None]:
@@ -15,6 +18,8 @@ async def stream_agent_events(agent, request) -> AsyncGenerator[dict, None]:
     config = {"configurable": {"thread_id": request.thread_id}}
     input_messages = {"messages": [{"role": "user", "content": request.message}]}
     current_agent = None
+
+    logger.info("streaming agent events for thread_id=%s", request.thread_id)
 
     try:
         async for chunk in agent.astream(
@@ -43,6 +48,7 @@ async def stream_agent_events(agent, request) -> AsyncGenerator[dict, None]:
                             yield e
 
     except Exception as exc:
+        logger.error("agent streaming error: %s", exc)
         yield {"event": "error", "data": str(exc)}
 
     finally:

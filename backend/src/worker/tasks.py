@@ -1,13 +1,16 @@
 """Celery task that bridges a sync worker to the async agent runner."""
 
 import asyncio
+import logging
 
-from celery_app import celery_app
-from models import ChatRequest
-from worker_runner import run_agent_and_stream
+from src.celery_app import celery_app
+from src.models.chat_models import ChatRequest
+from src.worker.worker_runner import run_agent_and_stream
+
+logger = logging.getLogger("backend")
 
 
-@celery_app.task(name="run_agent_task")
+@celery_app.task(name="run_agent_task", soft_time_limit=300, time_limit=360)
 def run_agent_task(request_dict):
     """Celery entry-point: deserialise the request and run the async agent loop.
 
@@ -15,6 +18,7 @@ def run_agent_task(request_dict):
     (rare, e.g. gevent) by creating an isolated loop.
     """
     request = ChatRequest(**request_dict)
+    logger.info("task received: job_id=%s thread_id=%s", request.job_id, request.thread_id)
 
     try:
         loop = asyncio.get_event_loop()
@@ -22,8 +26,7 @@ def run_agent_task(request_dict):
         loop = None
 
     if loop and loop.is_running():
-        # Rare case: already inside event loop (e.g. gevent weirdness)
-        # fallback: create isolated loop
+        logger.debug("already in event loop, using new loop")
         new_loop = asyncio.new_event_loop()
         try:
             new_loop.run_until_complete(run_agent_and_stream(request))

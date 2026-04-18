@@ -1,14 +1,24 @@
 """FastAPI application with SSE chat and health endpoints."""
 
 import json
+import logging
 
+import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.sse import EventSourceResponse, ServerSentEvent
+from logging.config import fileConfig
 
-from models import ChatRequest
-from redis_pubsub import subscribe
-from tasks import run_agent_task
+from pathlib import Path
+
+# Configure logging from INI file
+LOGGING_CONFIG_PATH = Path(__file__).parent / "logging.ini"
+fileConfig(LOGGING_CONFIG_PATH, disable_existing_loggers=False)
+logger = logging.getLogger("backend")
+
+from src.models.chat_models import ChatRequest
+from src.queue.redis_pubsub import subscribe
+from src.worker.tasks import run_agent_task
 
 app = FastAPI()
 
@@ -28,10 +38,12 @@ async def chat(request: ChatRequest):
     corresponding Redis pub/sub channel and yields events to the client
     until the agent signals done.
     """
-    request = request.ensure_job_id()
+    request = request.with_job_id()
+
+    logger.info("received chat request for job_id=%s", request.job_id)
 
     # 🚀 enqueue → RabbitMQ via Celery
-    run_agent_task.delay(request.dict())
+    run_agent_task.delay(request.model_dump())
 
     async def event_generator():
         """Generator that yields ServerSentEvent objects from Redis pub/sub."""
@@ -63,3 +75,13 @@ async def chat(request: ChatRequest):
 async def health():
     """Health check endpoint."""
     return {"status": "ok"}
+
+
+if __name__ == "__main__":
+    logger.info("starting uvicorn on 0.0.0.0:8000")
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=8000,
+        log_level="info",
+    )

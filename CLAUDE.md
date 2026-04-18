@@ -9,14 +9,17 @@ Celery + Redis pub/sub bridges the async worker to the FastAPI response.
 - Frontend is not yet developed — do not scaffold it
 
 ## Structure
-- backend/ — all server code
+- main.py — FastAPI app entry point
+- src/ — all application modules
+- utils/ — utilities (streaming)
+- docker/ — Docker config
+- docker-compose.yaml — compose file
 - frontend/ — empty, pending
 
 ## Dev Commands
-cd backend
 uv sync                                          # install deps
 uvicorn main:app --reload                        # dev server
-celery -A celery_app worker --loglevel=info      # required for streaming
+celery -A src.celery_app worker --loglevel=info  # required for streaming
 
 ## Prerequisites
 - RabbitMQ on localhost:5672 (Celery broker)
@@ -31,3 +34,4 @@ celery -A celery_app worker --loglevel=info      # required for streaming
 See .claude/rules/ for detailed standards:
 - streaming-patterns.md — LangGraph streaming API contract (read this first)
 - architecture.md — file responsibilities and what lives where
+- frontend.md - guidelines to write the frontend

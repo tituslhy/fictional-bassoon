@@ -9,5 +9,9 @@
     "deny": [
       "Bash(rm -rf:*)"
     ]
+  },
+  "enabledPlugins": {
+    "code-review@claude-plugins-official": true,
+    "coderabbit@claude-plugins-official": true
   }
 }
