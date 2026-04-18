@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls*)",
+      "Bash(grep*)",
+      "Bash(npm test*)",
+      "Bash(pytest*)",
+      "Bash(uv add *)"
+    ]
+  }
+}
