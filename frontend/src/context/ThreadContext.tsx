@@ -5,15 +5,6 @@ import type { Thread, ThreadMessage } from "@/types";
 
 const STORAGE_KEY = "fictional-bassoon-threads";
 
-function loadThreads(): Thread[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-}
-
 interface ThreadStore {
   threads: Thread[];
   activeThreadId: string | null;
@@ -28,15 +19,36 @@ interface ThreadStore {
 const ThreadContext = createContext<ThreadStore | null>(null);
 
 export function ThreadProvider({ children }: { children: React.ReactNode }) {
-  const [threads, setThreadsState] = useState<Thread[]>(loadThreads);
+  const [threads, setThreadsState] = useState<Thread[]>([]);
   const [activeThreadId, setActiveThreadIdState] = useState<string | null>(null);
+
+  // Load threads from localStorage on mount (client-only)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        setThreadsState(JSON.parse(raw));
+      }
+    } catch {
+      // Ignore errors
+    }
+  }, []);
+
+  // Persist threads to localStorage whenever they change
+  useEffect(() => {
+    if (threads.length > 0 || localStorage.getItem(STORAGE_KEY)) {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(threads));
+      } catch {
+        // Ignore errors
+      }
+    }
+  }, [threads]);
 
   const persistThreads = useCallback(
     (updater: Thread[] | ((prev: Thread[]) => Thread[])) => {
       setThreadsState((prev) => {
-        const next = typeof updater === "function" ? updater(prev) : updater;
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-        return next;
+        return typeof updater === "function" ? updater(prev) : updater;
       });
     },
     [],
