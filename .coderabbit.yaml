@@ -6,9 +6,9 @@ reviews:
   path_filters:
     - "!Claude.md"
     - "!LICENSE"
-    - ".claude/**"
-    - "frontend/eslintrc.json"
-    - "frontend/package-lock.json"
+    - "!.claude/**"
+    - "!frontend/.eslintrc.json"
+    - "!frontend/package-lock.json"
 
   auto_review:
     enabled: true
