@@ -16,17 +16,43 @@ export default function Chat() {
   // Use refs for streaming state to avoid stale closures
   const currentAssistantRef = useRef<ThreadMessage | null>(null);
   const isStreamingRef = useRef(false);
+  const streamingTargetThreadIdRef = useRef<string | null>(null);
 
   const handleMessageEvent = useCallback((event: SSEEvent) => {
     const store = storeRef.current;
     const assistantRef = currentAssistantRef;
+    const targetThreadId = streamingTargetThreadIdRef.current;
 
     if (event.event === "agent") return;
 
     if (event.event === "error") {
-      assistantRef.current = assistantRef.current
-        ? { ...assistantRef.current, status: "done", error: event.data }
-        : null;
+      const errorMessage = assistantRef.current
+        ? { ...assistantRef.current, status: "done" as const, error: event.data }
+        : {
+            id: crypto.randomUUID(),
+            role: "assistant" as const,
+            content: "",
+            reasoning: "",
+            toolCalls: [],
+            status: "done" as const,
+            error: event.data,
+          };
+      assistantRef.current = errorMessage;
+
+      // Mirror to store
+      if (targetThreadId) {
+        const thread = store.threads.find((t) => t.id === targetThreadId);
+        if (thread) {
+          const msgs = [...thread.messages];
+          const idx = msgs.findIndex((m) => m.id === errorMessage.id);
+          if (idx >= 0) {
+            msgs[idx] = errorMessage;
+          } else {
+            msgs.push(errorMessage);
+          }
+          store.updateThreadMessages(targetThreadId, msgs);
+        }
+      }
       return;
     }
 
@@ -40,6 +66,14 @@ export default function Chat() {
         toolCalls: [],
         status: "streaming",
       };
+
+      // Mirror initial creation to store
+      if (targetThreadId) {
+        const thread = store.threads.find((t) => t.id === targetThreadId);
+        if (thread) {
+          store.updateThreadMessages(targetThreadId, [...thread.messages, assistantRef.current]);
+        }
+      }
     }
 
     switch (event.event) {
@@ -48,6 +82,19 @@ export default function Chat() {
           ...assistantRef.current,
           reasoning: (assistantRef.current.reasoning || "") + event.data,
         };
+
+        // Mirror to store
+        if (targetThreadId) {
+          const thread = store.threads.find((t) => t.id === targetThreadId);
+          if (thread) {
+            const msgs = [...thread.messages];
+            const idx = msgs.findIndex((m) => m.id === assistantRef.current?.id);
+            if (idx >= 0) {
+              msgs[idx] = assistantRef.current;
+              store.updateThreadMessages(targetThreadId, msgs);
+            }
+          }
+        }
         break;
 
       case "answer":
@@ -55,6 +102,19 @@ export default function Chat() {
           ...assistantRef.current,
           content: assistantRef.current.content + event.data,
         };
+
+        // Mirror to store
+        if (targetThreadId) {
+          const thread = store.threads.find((t) => t.id === targetThreadId);
+          if (thread) {
+            const msgs = [...thread.messages];
+            const idx = msgs.findIndex((m) => m.id === assistantRef.current?.id);
+            if (idx >= 0) {
+              msgs[idx] = assistantRef.current;
+              store.updateThreadMessages(targetThreadId, msgs);
+            }
+          }
+        }
         break;
 
       case "tool_call": {
@@ -82,6 +142,19 @@ export default function Chat() {
           ...assistantRef.current,
           toolCalls: [...assistantRef.current.toolCalls, newToolCall],
         };
+
+        // Mirror to store
+        if (targetThreadId) {
+          const thread = store.threads.find((t) => t.id === targetThreadId);
+          if (thread) {
+            const msgs = [...thread.messages];
+            const idx = msgs.findIndex((m) => m.id === assistantRef.current?.id);
+            if (idx >= 0) {
+              msgs[idx] = assistantRef.current;
+              store.updateThreadMessages(targetThreadId, msgs);
+            }
+          }
+        }
         break;
       }
 
@@ -99,16 +172,29 @@ export default function Chat() {
             tc.result ? tc : { ...tc, result: content },
           ),
         };
+
+        // Mirror to store
+        if (targetThreadId) {
+          const thread = store.threads.find((t) => t.id === targetThreadId);
+          if (thread) {
+            const msgs = [...thread.messages];
+            const idx = msgs.findIndex((m) => m.id === assistantRef.current?.id);
+            if (idx >= 0) {
+              msgs[idx] = assistantRef.current;
+              store.updateThreadMessages(targetThreadId, msgs);
+            }
+          }
+        }
         break;
       }
 
       case "done": {
-        if (assistantRef.current) {
+        if (assistantRef.current && targetThreadId) {
           const finalized = { ...assistantRef.current, status: "done" as const };
-          const thread = store.threads.find((t) => t.id === activeThreadId);
+          const thread = store.threads.find((t) => t.id === targetThreadId);
           if (thread) {
             const msgs = [...thread.messages];
-            const idx = msgs.findLastIndex((m) => m.role === "assistant" && m.status === "streaming");
+            const idx = msgs.findIndex((m) => m.id === finalized.id);
             if (idx >= 0) {
               msgs[idx] = finalized;
             } else {
@@ -127,32 +213,49 @@ export default function Chat() {
         }
         assistantRef.current = null;
         isStreamingRef.current = false;
+        streamingTargetThreadIdRef.current = null;
         break;
       }
     }
-  }, [storeRef, activeThreadId]);
+  }, [storeRef]);
 
   const stream = useSSEStream({
     onEvent: handleMessageEvent,
     onError: (err) => {
-      if (!currentAssistantRef.current) {
-        currentAssistantRef.current = {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: "",
-          reasoning: "",
-          toolCalls: [],
-          status: "done",
-          error: err,
-        };
-      } else {
-        currentAssistantRef.current = {
-          ...currentAssistantRef.current,
-          status: "done",
-          error: err,
-        };
+      const store = storeRef.current;
+      const targetThreadId = streamingTargetThreadIdRef.current;
+
+      const errorMessage = currentAssistantRef.current
+        ? { ...currentAssistantRef.current, status: "done" as const, error: err }
+        : {
+            id: crypto.randomUUID(),
+            role: "assistant" as const,
+            content: "",
+            reasoning: "",
+            toolCalls: [],
+            status: "done" as const,
+            error: err,
+          };
+
+      currentAssistantRef.current = errorMessage;
+
+      // Mirror to store
+      if (targetThreadId) {
+        const thread = store.threads.find((t) => t.id === targetThreadId);
+        if (thread) {
+          const msgs = [...thread.messages];
+          const idx = msgs.findIndex((m) => m.id === errorMessage.id);
+          if (idx >= 0) {
+            msgs[idx] = errorMessage;
+          } else {
+            msgs.push(errorMessage);
+          }
+          store.updateThreadMessages(targetThreadId, msgs);
+        }
       }
+
       isStreamingRef.current = false;
+      streamingTargetThreadIdRef.current = null;
     },
   });
 
@@ -199,6 +302,7 @@ export default function Chat() {
         store.updateThreadMessages(targetThreadId, [...thread.messages, userMsg, assistantMsg]);
       }
 
+      streamingTargetThreadIdRef.current = targetThreadId;
       stream.start({ message: text, thread_id: targetThreadId });
     },
     [activeThreadId, stream, storeRef],
@@ -211,7 +315,7 @@ export default function Chat() {
       <Sidebar />
       <div className="flex flex-1 flex-col min-w-0">
         <MessageList
-          messages={currentThread?.messages.filter((m) => m.status === "done") || []}
+          messages={currentThread?.messages || []}
           isStreaming={stream.isStreaming}
         />
         <div className="border-t border-[#262626]">

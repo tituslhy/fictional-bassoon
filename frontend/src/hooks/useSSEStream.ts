@@ -31,10 +31,22 @@ export function useSSEStream(options: UseSSEStreamOptions) {
         signal: abortRef.current.signal,
       })
         .then(async (res) => {
-          if (!res.body) return;
+          if (!res.ok) {
+            setIsStreaming(false);
+            options.onError?.(`HTTP ${res.status}: ${res.statusText}`);
+            return;
+          }
+
+          if (!res.body) {
+            setIsStreaming(false);
+            options.onComplete?.();
+            return;
+          }
+
           const reader = res.body.getReader();
           const decoder = new TextDecoder();
           let buffer = "";
+          let receivedDone = false;
 
           try {
             while (true) {
@@ -50,11 +62,18 @@ export function useSSEStream(options: UseSSEStreamOptions) {
                 if (!parsed) continue;
                 options.onEvent(parsed);
                 if (parsed.event === "done") {
+                  receivedDone = true;
                   options.onComplete?.();
                   setIsStreaming(false);
                   return;
                 }
               }
+            }
+
+            // Stream ended without "done" event
+            if (!receivedDone) {
+              setIsStreaming(false);
+              options.onComplete?.();
             }
           } finally {
             reader.releaseLock();
@@ -77,10 +96,21 @@ function parseSSE(text: string): SSEEvent | null {
   const lines = text.split("\n");
   let event: SSEEventType = "reasoning";
   let data = "";
+  let isFirstDataLine = true;
 
   for (const line of lines) {
-    if (line.startsWith("event:")) event = line.slice(6).trim() as SSEEventType;
-    if (line.startsWith("data:")) data = line.slice(5).trim();
+    if (line.startsWith("event:")) {
+      event = line.slice(6).trim() as SSEEventType;
+    }
+    if (line.startsWith("data:")) {
+      const payload = line.slice(5);
+      if (isFirstDataLine) {
+        data = payload;
+        isFirstDataLine = false;
+      } else {
+        data += "\n" + payload;
+      }
+    }
   }
 
   if (!data) return null;

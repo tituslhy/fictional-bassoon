@@ -53,11 +53,13 @@ export default function MessageInput({ onSend, isStreaming, isEmpty }: MessageIn
               placeholder="Type a message..."
               rows={1}
               disabled={isStreaming}
+              aria-label="Message"
               className="flex-1 resize-none bg-transparent text-sm text-[#e5e5e5] placeholder:text-[#6b7280] outline-none disabled:opacity-50 max-h-[200px] min-h-[24px] leading-5"
             />
             <button
               type="submit"
               disabled={!text.trim() || isStreaming}
+              aria-label="Send message"
               className="ml-2 p-2 rounded-lg bg-[#3b82f6] text-white hover:bg-[#2563eb] disabled:opacity-30 disabled:cursor-not-allowed transition-colors shrink-0"
             >
               <Send className="w-4 h-4" />
