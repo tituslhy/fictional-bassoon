@@ -3,6 +3,12 @@ language: "en"
 reviews:
   profile: chill
   high_level_summary: true
+  path_filters:
+    - "!Claude.md"
+    - "!LICENSE"
+    - "!.claude/**"
+    - "!frontend/.eslintrc.json"
+    - "!frontend/package-lock.json"
 
   auto_review:
     enabled: true
