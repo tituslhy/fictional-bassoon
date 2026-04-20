@@ -13,7 +13,7 @@ export default function Chat() {
   const storeRef = useThreadStore();
   const { activeThreadId } = useThreadsContext();
 
-  // Use refs for streaming state to track the active message object
+  // Use refs for streaming state to avoid stale closures
   const currentAssistantRef = useRef<ThreadMessage | null>(null);
   const isStreamingRef = useRef(false);
   const streamingTargetThreadIdRef = useRef<string | null>(null);
@@ -22,7 +22,6 @@ export default function Chat() {
     const store = storeRef.current;
     const assistantRef = currentAssistantRef;
     const targetThreadId = streamingTargetThreadIdRef.current;
-    if (!activeThreadId) return;
 
     if (event.event === "agent") return;
 
@@ -58,8 +57,8 @@ export default function Chat() {
     }
 
     // Create assistant message if it doesn't exist yet
-    if (!currentAssistantRef.current) {
-      currentAssistantRef.current = {
+    if (!assistantRef.current) {
+      assistantRef.current = {
         id: crypto.randomUUID(),
         role: "assistant",
         content: "",
@@ -118,20 +117,20 @@ export default function Chat() {
         }
         break;
 
-        case "tool_call": {
-          let parsed: { name: string; args: string };
-          try {
-            const obj = JSON.parse(event.data);
-            if (obj.name && obj.args) {
-              parsed = obj;
-            } else {
-              const match = event.data.match(/^([^(]+)\(([\s\S]*)\)$/);
-              parsed = match ? { name: match[1], args: match[2] } : { name: "unknown", args: event.data };
-            }
-          } catch {
+      case "tool_call": {
+        let parsed: { name: string; args: string };
+        try {
+          const obj = JSON.parse(event.data);
+          if (obj.name && obj.args) {
+            parsed = obj;
+          } else {
             const match = event.data.match(/^([^(]+)\(([\s\S]*)\)$/);
             parsed = match ? { name: match[1], args: match[2] } : { name: "unknown", args: event.data };
           }
+        } catch {
+          const match = event.data.match(/^([^(]+)\(([\s\S]*)\)$/);
+          parsed = match ? { name: match[1], args: match[2] } : { name: "unknown", args: event.data };
+        }
 
         const newToolCall: ToolCall = {
           id: crypto.randomUUID(),
@@ -188,9 +187,6 @@ export default function Chat() {
         }
         break;
       }
-    }
-
-    currentAssistantRef.current = updatedMsg;
 
       case "done": {
         if (assistantRef.current && targetThreadId) {
@@ -206,15 +202,16 @@ export default function Chat() {
             }
             store.updateThreadMessages(thread.id, msgs);
 
-      if (event.event === "done") {
-        if (thread.title === "New Thread") {
-          const firstUser = msgs.find((m) => m.role === "user");
-          if (firstUser) {
-            const title = firstUser.content.slice(0, 40) + (firstUser.content.length > 40 ? "..." : "");
-            store.updateThreadTitle(activeThreadId, title);
+            if (thread.title === "New Thread") {
+              const firstUser = msgs.find((m) => m.role === "user");
+              if (firstUser) {
+                const title = firstUser.content.slice(0, 40) + (firstUser.content.length > 40 ? "..." : "");
+                store.updateThreadTitle(thread.id, title);
+              }
+            }
           }
         }
-        currentAssistantRef.current = null;
+        assistantRef.current = null;
         isStreamingRef.current = false;
         streamingTargetThreadIdRef.current = null;
         break;
@@ -287,9 +284,22 @@ export default function Chat() {
       currentAssistantRef.current = assistantMsg;
       isStreamingRef.current = true;
 
-      const thread = store.threads.find((t) => t.id === activeThreadId);
-      if (thread) {
-        store.updateThreadMessages(activeThreadId, [...thread.messages, userMsg, assistantMsg]);
+      let targetThreadId = activeThreadId;
+      let thread = store.threads.find((t) => t.id === activeThreadId);
+
+      if (!thread) {
+        targetThreadId = crypto.randomUUID();
+        const title = text.slice(0, 40) + (text.length > 40 ? "..." : "");
+        thread = {
+          id: targetThreadId,
+          title,
+          messages: [userMsg, assistantMsg],
+          updatedAt: Date.now(),
+        };
+        store.updateThreadMessages(targetThreadId, thread.messages);
+        store.setActiveThreadId(targetThreadId);
+      } else {
+        store.updateThreadMessages(targetThreadId, [...thread.messages, userMsg, assistantMsg]);
       }
 
       streamingTargetThreadIdRef.current = targetThreadId;

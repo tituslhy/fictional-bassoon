@@ -21,20 +21,6 @@ const ThreadContext = createContext<ThreadStore | null>(null);
 export function ThreadProvider({ children }: { children: React.ReactNode }) {
   const [threads, setThreadsState] = useState<Thread[]>([]);
   const [activeThreadId, setActiveThreadIdState] = useState<string | null>(null);
-  const [isLoaded, setIsLoaded] = useState(false);
-
-  // Load threads from localStorage on mount
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        setThreadsState(JSON.parse(raw));
-      }
-    } catch (e) {
-      console.error("Failed to load threads from storage", e);
-    }
-    setIsLoaded(true);
-  }, []);
 
   // Load threads from localStorage on mount (client-only)
   useEffect(() => {
@@ -123,16 +109,13 @@ export function ThreadProvider({ children }: { children: React.ReactNode }) {
   const updateThreadMessages = useCallback(
     (threadId: string, messages: ThreadMessage[]) => {
       persistThreads((prev) =>
-        prev.map((t) => (t.id === threadId ? { ...t, messages, updatedAt: Date.now() } : t)),
+        prev.map((t) => (t.id === threadId ? { ...t, messages } : t)),
       );
     },
     [persistThreads],
   );
 
   const sortedThreads = [...threads].sort((a, b) => b.updatedAt - a.updatedAt);
-
-  // Prevent hydration flicker by returning null or a placeholder until loaded
-  if (!isLoaded) return null;
 
   return (
     <ThreadContext.Provider

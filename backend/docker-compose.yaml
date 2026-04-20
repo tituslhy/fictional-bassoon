@@ -72,10 +72,9 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile
-    command: uv run celery -A src.celery_app worker --loglevel=info
+    command: celery -A src.celery_app worker --loglevel=info
     env_file:
-      - .env
-
+      - .env.example
     environment:
       BROKER_URL: amqp://guest:guest@rabbitmq:5672//
       CELERY_RESULT_BACKEND: rpc://
@@ -84,12 +83,9 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       TAVILY_API_KEY: ${TAVILY_API_KEY}
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
+      - postgres
+      - redis
+      - rabbitmq
     volumes:
       - logs:/app/logs
 

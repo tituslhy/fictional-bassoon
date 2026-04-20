@@ -46,6 +46,21 @@ reviews:
 
         Suggest improvements that make the UI more robust and maintainable.
 
+    - path: "docs/**/*.md"
+      instructions: |
+        Review documentation for clarity, accuracy, and completeness.
+        Ensure commands, configuration examples, and Kubernetes steps are correct and reproducible.
+
+    - path: "**/*.conf"
+      instructions: |
+        Carefully review NGINX configuration for correctness, security risks, and performance issues.
+        Check reverse proxy rules, upstream definitions, headers, and load balancing behaviour.
+
+    - path: "helm/**/*.yaml"
+      instructions: |
+        Review Helm templates and Kubernetes manifests for correctness.
+        Validate resource configuration, service ports, ingress rules, and environment variables.
+
     - path: "**/*.yaml"
       instructions: |
         Validate YAML structure and configuration correctness.
