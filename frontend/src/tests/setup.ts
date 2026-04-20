@@ -1,12 +1,24 @@
 import "@testing-library/jest-dom";
 import { vi } from "vitest";
 
-// Mock crypto.randomUUID
+// Mock crypto.randomUUID with deterministic value
+const originalCrypto = global.crypto;
+const originalRandomUUID = originalCrypto?.randomUUID;
+
 if (!global.crypto) {
-  Object.defineProperty(global, "crypto", {
-    value: {
-      randomUUID: () => "test-uuid-" + Math.random().toString(36).substring(2, 9),
-    },
+  global.crypto = {} as Crypto;
+}
+
+global.crypto.randomUUID = () => "test-uuid-0000000";
+
+// Restore original in teardown if needed
+if (typeof afterAll !== "undefined") {
+  afterAll(() => {
+    if (originalRandomUUID) {
+      global.crypto.randomUUID = originalRandomUUID;
+    } else if (originalCrypto) {
+      global.crypto = originalCrypto;
+    }
   });
 }
 

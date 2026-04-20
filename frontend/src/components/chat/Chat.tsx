@@ -188,9 +188,6 @@ export default function Chat() {
         }
         break;
       }
-    }
-
-    currentAssistantRef.current = updatedMsg;
 
       case "done": {
         if (assistantRef.current && targetThreadId) {
@@ -206,12 +203,13 @@ export default function Chat() {
             }
             store.updateThreadMessages(thread.id, msgs);
 
-      if (event.event === "done") {
-        if (thread.title === "New Thread") {
-          const firstUser = msgs.find((m) => m.role === "user");
-          if (firstUser) {
-            const title = firstUser.content.slice(0, 40) + (firstUser.content.length > 40 ? "..." : "");
-            store.updateThreadTitle(activeThreadId, title);
+            if (thread.title === "New Thread") {
+              const firstUser = msgs.find((m) => m.role === "user");
+              if (firstUser) {
+                const title = firstUser.content.slice(0, 40) + (firstUser.content.length > 40 ? "..." : "");
+                store.updateThreadTitle(activeThreadId, title);
+              }
+            }
           }
         }
         currentAssistantRef.current = null;

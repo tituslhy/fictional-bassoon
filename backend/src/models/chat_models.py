@@ -1,6 +1,7 @@
 """Request models for the streaming agent API."""
 
 from pydantic import BaseModel, Field
+from typing import Literal
 import uuid
 
 
@@ -16,3 +17,10 @@ class ChatRequest(BaseModel):
         return self.model_copy(
             update={"job_id": self.job_id or str(uuid.uuid4())},
         )
+
+
+class HealthResponse(BaseModel):
+    """Response model for the /health endpoint."""
+
+    status: Literal["ok", "error"]
+    redis: Literal["connected", "disconnected"]

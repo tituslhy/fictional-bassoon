@@ -1,6 +1,6 @@
 {
   "security": {
-    "enablePermanentToolApproval": true,
+    "enablePermanentToolApproval": false,
     "disableYoloMode": false,
     "toolSandboxing": true
   },

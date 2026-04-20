@@ -10,8 +10,9 @@ describe("useSSEStream", () => {
   it("should handle successful SSE stream", async () => {
     const onEvent = vi.fn();
     const onComplete = vi.fn();
-    
+
     const mockResponse = {
+      ok: true,
       body: {
         getReader: () => ({
           read: vi.fn()
@@ -58,8 +59,14 @@ describe("useSSEStream", () => {
       result.current.start({ message: "test", thread_id: "1" });
     });
 
-    expect(onError).toHaveBeenCalledWith("Network error");
-    expect(result.current.isStreaming).toBe(false);
+    // Wait for async error handler to complete
+    await waitFor(() => {
+      expect(onError).toHaveBeenCalledWith("Network error");
+    });
+
+    await waitFor(() => {
+      expect(result.current.isStreaming).toBe(false);
+    });
   });
 
   it("should abort stream when stop is called", async () => {

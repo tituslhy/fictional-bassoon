@@ -16,8 +16,9 @@ LOGGING_CONFIG_PATH = Path(__file__).parent / "logging.ini"
 fileConfig(LOGGING_CONFIG_PATH, disable_existing_loggers=False)
 logger = logging.getLogger("backend")
 
-from src.models.chat_models import ChatRequest
+from src.models.chat_models import ChatRequest, HealthResponse
 from src.queue.redis_pubsub import subscribe, redis_client
+from redis.exceptions import RedisError
 from src.worker.tasks import run_agent_task
 
 app = FastAPI()
@@ -63,12 +64,22 @@ async def chat(request: ChatRequest):
                     continue
 
                 event = json.loads(message["data"])
-                
+
                 # Format as SSE:
                 # event: <type>
-                # data: <content>
+                # data: <content> (split multiline content across multiple data: lines)
                 # <blank line>
-                yield f"event: {event['event']}\ndata: {event['data']}\n\n"
+                event_type = event['event']
+                data_content = event['data']
+
+                # Split data content on newlines and emit each line prefixed with "data: "
+                data_lines = data_content.split('\n')
+                sse_output = f"event: {event_type}\n"
+                for line in data_lines:
+                    sse_output += f"data: {line}\n"
+                sse_output += "\n"
+
+                yield sse_output
 
                 if event["event"] == "done":
                     break
@@ -80,17 +91,15 @@ async def chat(request: ChatRequest):
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
-@app.get("/health")
-async def health():
+@app.get("/health", response_model=HealthResponse)
+async def health() -> HealthResponse:
     """Health check endpoint with Redis connectivity check."""
-    health_status = {"status": "ok", "redis": "connected"}
     try:
         await redis_client.ping()
-    except Exception as e:
+        return HealthResponse(status="ok", redis="connected")
+    except RedisError as e:
         logger.error("Redis health check failed: %s", e)
-        health_status["status"] = "error"
-        health_status["redis"] = "disconnected"
-    return health_status
+        return HealthResponse(status="error", redis="disconnected")
 
 
 if __name__ == "__main__":

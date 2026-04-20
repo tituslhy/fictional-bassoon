@@ -1,4 +1,5 @@
 import pytest
+import asyncio
 from unittest.mock import AsyncMock, patch, MagicMock
 from src.worker.worker_runner import run_agent_and_stream
 from src.worker.tasks import run_agent_task
@@ -32,14 +33,23 @@ async def test_run_agent_and_stream():
 
 def test_run_agent_task():
     request_dict = {"message": "test", "thread_id": "t1", "job_id": "j1"}
-    
-    with patch("src.worker.tasks.run_agent_and_stream") as mock_runner, \
+
+    with patch("src.worker.tasks.run_agent_and_stream", new_callable=AsyncMock) as mock_runner, \
          patch("src.worker.tasks._run_coroutine_sync") as mock_sync_runner:
-        
+
         run_agent_task(request_dict)
-        
-        # Verify it created a ChatRequest and passed the coro to sync runner
+
+        # Verify it created a ChatRequest and passed it to run_agent_and_stream
+        mock_runner.assert_called_once()
+        call_args = mock_runner.call_args[0]
+        assert isinstance(call_args[0], ChatRequest)
+        assert call_args[0].message == "test"
+        assert call_args[0].thread_id == "t1"
+        assert call_args[0].job_id == "j1"
+
+        # Verify _run_coroutine_sync was called with a true coroutine
         mock_sync_runner.assert_called_once()
         args, _ = mock_sync_runner.call_args
-        # The argument should be a coroutine object from run_agent_and_stream
-        assert hasattr(args[0], "send") # Coroutines have .send()
+        assert asyncio.iscoroutine(args[0])
+        # Close the unawaited coroutine to avoid warnings
+        args[0].close()

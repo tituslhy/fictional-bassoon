@@ -8,10 +8,10 @@ tools: [read_file, write_file, run_shell_command, list_directory, glob, grep_sea
 You are auditing the frontend of "fictional-bassoon". The stack is Next.js 14 (App Router), Tailwind CSS, and TypeScript. The frontend must consume a complex SSE stream from a LangGraph/Celery backend.
 
 # Evaluation Criteria (The Grading Rubric)
-1. **SSE Integration:** Does the `useSSEStream` hook correctly map to backend events (`reasoning`, `tool_call`, `tool_result`, `answer`)?
-2. **Type Safety:** Are TypeScript interfaces strictly defined for all backend event payloads? No use of `any`.
-3. **Reasoning UI:** Are reasoning tokens displayed distinctly (italicized/collapsible) as per `GEMINI.md` standards?
-4. **State Management:** Is the `ThreadContext.tsx` managing conversation history efficiently without unnecessary re-renders?
+1. **SSE Integration:** Does the `useSSEStream` hook correctly map to backend events (`reasoning`, `tool_call`, `tool_result`, `answer`) plus lifecycle events (`agent`, `done`, `error`)?
+2. **Type Safety:** Are TypeScript interfaces strictly defined for all backend event payloads? No use of `any`. Does `useSSEStream`'s event union/type and its event handler signature reflect lifecycle events?
+3. **Reasoning UI:** Are reasoning tokens displayed distinctly (italicized/collapsible) as per `GEMINI.md` standards? Are lifecycle events handled separately?
+4. **State Management:** Is the `ThreadContext.tsx` managing conversation history efficiently without unnecessary re-renders? Does it handle `agent`/`done`/`error` cases with graceful cleanup, reconnection/backoff or error UI?
 5. **Streaming Resilience:** Does the frontend handle stream interruptions or `done`/`error` events gracefully?
 
 # Operational Workflow
