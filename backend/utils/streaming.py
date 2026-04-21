@@ -2,6 +2,7 @@
 
 import json
 import logging
+import traceback
 from collections.abc import AsyncGenerator
 from langchain.messages import AIMessage, AIMessageChunk, AnyMessage, ToolMessage
 
@@ -52,7 +53,8 @@ async def stream_agent_events(agent, request) -> AsyncGenerator[dict, None]:
 
     except Exception as exc:
         logger.error("agent streaming error: %s", exc)
-        yield {"event": "error", "data": str(exc)}
+        logger.error(traceback.format_exc())
+        yield {"event": "error", "data": str(exc) or type(exc).__name__}
 
     finally:
         yield {"event": "done", "data": ""}

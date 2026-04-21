@@ -20,15 +20,15 @@ export default function Chat() {
 
   const handleMessageEvent = useCallback((event: SSEEvent) => {
     const store = storeRef.current;
-    const assistantRef = currentAssistantRef;
     const targetThreadId = streamingTargetThreadIdRef.current;
     if (!activeThreadId) return;
 
     if (event.event === "agent") return;
 
     if (event.event === "error") {
-      const errorMessage = assistantRef.current
-        ? { ...assistantRef.current, status: "done" as const, error: event.data }
+      const assistantMsg = currentAssistantRef.current;
+      const errorMessage: ThreadMessage = assistantMsg
+        ? { ...assistantMsg, status: "done" as const, error: event.data }
         : {
             id: crypto.randomUUID(),
             role: "assistant" as const,
@@ -38,7 +38,7 @@ export default function Chat() {
             status: "done" as const,
             error: event.data,
           };
-      assistantRef.current = errorMessage;
+      currentAssistantRef.current = errorMessage;
 
       // Mirror to store
       if (targetThreadId) {
@@ -59,7 +59,7 @@ export default function Chat() {
 
     // Create assistant message if it doesn't exist yet
     if (!currentAssistantRef.current) {
-      currentAssistantRef.current = {
+      const initialAssistantMsg: ThreadMessage = {
         id: crypto.randomUUID(),
         role: "assistant",
         content: "",
@@ -67,71 +67,79 @@ export default function Chat() {
         toolCalls: [],
         status: "streaming",
       };
+      currentAssistantRef.current = initialAssistantMsg;
 
       // Mirror initial creation to store
       if (targetThreadId) {
         const thread = store.threads.find((t) => t.id === targetThreadId);
         if (thread) {
-          store.updateThreadMessages(targetThreadId, [...thread.messages, assistantRef.current]);
+          store.updateThreadMessages(targetThreadId, [...thread.messages, initialAssistantMsg]);
         }
       }
     }
 
+    const msg = currentAssistantRef.current;
+    if (!msg) return;
+
     switch (event.event) {
-      case "reasoning":
-        assistantRef.current = {
-          ...assistantRef.current,
-          reasoning: (assistantRef.current.reasoning || "") + event.data,
+      case "reasoning": {
+        const updatedMsg: ThreadMessage = {
+          ...msg,
+          reasoning: (msg.reasoning || "") + event.data,
         };
+        currentAssistantRef.current = updatedMsg;
 
         // Mirror to store
         if (targetThreadId) {
           const thread = store.threads.find((t) => t.id === targetThreadId);
           if (thread) {
             const msgs = [...thread.messages];
-            const idx = msgs.findIndex((m) => m.id === assistantRef.current?.id);
+            const idx = msgs.findIndex((m) => m.id === updatedMsg.id);
             if (idx >= 0) {
-              msgs[idx] = assistantRef.current;
+              msgs[idx] = updatedMsg;
               store.updateThreadMessages(targetThreadId, msgs);
             }
           }
         }
         break;
+      }
 
-      case "answer":
-        assistantRef.current = {
-          ...assistantRef.current,
-          content: assistantRef.current.content + event.data,
+      case "answer": {
+        const updatedMsg: ThreadMessage = {
+          ...msg,
+          content: msg.content + event.data,
         };
+        currentAssistantRef.current = updatedMsg;
 
         // Mirror to store
         if (targetThreadId) {
           const thread = store.threads.find((t) => t.id === targetThreadId);
           if (thread) {
             const msgs = [...thread.messages];
-            const idx = msgs.findIndex((m) => m.id === assistantRef.current?.id);
+            const idx = msgs.findIndex((m) => m.id === updatedMsg.id);
             if (idx >= 0) {
-              msgs[idx] = assistantRef.current;
+              msgs[idx] = updatedMsg;
               store.updateThreadMessages(targetThreadId, msgs);
             }
           }
         }
         break;
+      }
 
-        case "tool_call": {
-          let parsed: { name: string; args: string };
-          try {
-            const obj = JSON.parse(event.data);
-            if (obj.name && obj.args) {
-              parsed = obj;
-            } else {
-              const match = event.data.match(/^([^(]+)\(([\s\S]*)\)$/);
-              parsed = match ? { name: match[1], args: match[2] } : { name: "unknown", args: event.data };
-            }
-          } catch {
+      case "tool_call": {
+        let parsed: { name: string; args: string };
+        try {
+          const obj = JSON.parse(event.data);
+          if (obj.name && obj.args) {
+            parsed = obj;
+          } else {
             const match = event.data.match(/^([^(]+)\(([\s\S]*)\)$/);
             parsed = match ? { name: match[1], args: match[2] } : { name: "unknown", args: event.data };
           }
+        } catch {
+          const match = event.data.match(/^([^(]+)\(([\s\S]*)\)$/);
+          parsed = match ? { name: match[1], args: match[2] } : { name: "unknown", args: event.data };
+        }
 
         const newToolCall: ToolCall = {
           id: crypto.randomUUID(),
@@ -139,19 +147,20 @@ export default function Chat() {
           args: parsed.args,
           expanded: false,
         };
-        assistantRef.current = {
-          ...assistantRef.current,
-          toolCalls: [...assistantRef.current.toolCalls, newToolCall],
+        const updatedMsg: ThreadMessage = {
+          ...msg,
+          toolCalls: [...(msg.toolCalls || []), newToolCall],
         };
+        currentAssistantRef.current = updatedMsg;
 
         // Mirror to store
         if (targetThreadId) {
           const thread = store.threads.find((t) => t.id === targetThreadId);
           if (thread) {
             const msgs = [...thread.messages];
-            const idx = msgs.findIndex((m) => m.id === assistantRef.current?.id);
+            const idx = msgs.findIndex((m) => m.id === updatedMsg.id);
             if (idx >= 0) {
-              msgs[idx] = assistantRef.current;
+              msgs[idx] = updatedMsg;
               store.updateThreadMessages(targetThreadId, msgs);
             }
           }
@@ -167,21 +176,22 @@ export default function Chat() {
         } catch {
           content = event.data;
         }
-        assistantRef.current = {
-          ...assistantRef.current,
-          toolCalls: assistantRef.current.toolCalls.map((tc) =>
+        const updatedMsg: ThreadMessage = {
+          ...msg,
+          toolCalls: (msg.toolCalls || []).map((tc) =>
             tc.result ? tc : { ...tc, result: content },
           ),
         };
+        currentAssistantRef.current = updatedMsg;
 
         // Mirror to store
         if (targetThreadId) {
           const thread = store.threads.find((t) => t.id === targetThreadId);
           if (thread) {
             const msgs = [...thread.messages];
-            const idx = msgs.findIndex((m) => m.id === assistantRef.current?.id);
+            const idx = msgs.findIndex((m) => m.id === updatedMsg.id);
             if (idx >= 0) {
-              msgs[idx] = assistantRef.current;
+              msgs[idx] = updatedMsg;
               store.updateThreadMessages(targetThreadId, msgs);
             }
           }
@@ -190,8 +200,8 @@ export default function Chat() {
       }
 
       case "done": {
-        if (assistantRef.current && targetThreadId) {
-          const finalized = { ...assistantRef.current, status: "done" as const };
+        if (targetThreadId) {
+          const finalized: ThreadMessage = { ...msg, status: "done" as const };
           const thread = store.threads.find((t) => t.id === targetThreadId);
           if (thread) {
             const msgs = [...thread.messages];
@@ -218,16 +228,17 @@ export default function Chat() {
         break;
       }
     }
-  }, [storeRef]);
+  }, [storeRef, activeThreadId]);
 
   const stream = useSSEStream({
     onEvent: handleMessageEvent,
     onError: (err) => {
       const store = storeRef.current;
       const targetThreadId = streamingTargetThreadIdRef.current;
+      const assistantMsg = currentAssistantRef.current;
 
-      const errorMessage = currentAssistantRef.current
-        ? { ...currentAssistantRef.current, status: "done" as const, error: err }
+      const errorMessage: ThreadMessage = assistantMsg
+        ? { ...assistantMsg, status: "done" as const, error: err }
         : {
             id: crypto.randomUUID(),
             role: "assistant" as const,
@@ -284,14 +295,14 @@ export default function Chat() {
 
       currentAssistantRef.current = assistantMsg;
       isStreamingRef.current = true;
+      streamingTargetThreadIdRef.current = activeThreadId;
 
       const thread = store.threads.find((t) => t.id === activeThreadId);
       if (thread) {
         store.updateThreadMessages(activeThreadId, [...thread.messages, userMsg, assistantMsg]);
       }
 
-      streamingTargetThreadIdRef.current = targetThreadId;
-      stream.start({ message: text, thread_id: targetThreadId });
+      stream.start({ message: text, thread_id: activeThreadId });
     },
     [activeThreadId, stream, storeRef],
   );

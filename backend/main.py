@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from logging.config import fileConfig
+from prometheus_fastapi_instrumentator import Instrumentator
 
 from pathlib import Path
 
@@ -29,6 +30,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Instrument FastAPI with Prometheus
+Instrumentator().instrument(app).expose(app)
 
 
 @app.post("/chat")
