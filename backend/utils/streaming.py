@@ -62,9 +62,11 @@ def _handle_message_chunk(token: AIMessageChunk):
     """Extract reasoning, answer, and tool_call events from an AIMessageChunk."""
     events = []
 
-    for block in token.content_blocks:
-        if block["type"] == "reasoning":
-            events.append({"event": "reasoning", "data": block["reasoning"]})
+    # Safely handle content_blocks if present (standard for reasoning models in this project)
+    content_blocks = getattr(token, "content_blocks", [])
+    for block in content_blocks:
+        if block.get("type") == "reasoning":
+            events.append({"event": "reasoning", "data": block.get("reasoning", "")})
 
     if token.text:
         events.append({"event": "answer", "data": token.text})

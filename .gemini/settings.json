@@ -1,0 +1,23 @@
+{
+  "security": {
+    "enablePermanentToolApproval": false,
+    "disableYoloMode": false,
+    "toolSandboxing": true
+  },
+  "tools": {
+    "core": [
+      "run_shell_command(coderabbit)",
+      "run_shell_command(uv run pytest)",
+      "run_shell_command(ruff)",
+      "read_file",
+      "write_file",
+      "list_directory",
+      "glob",
+      "grep_search"
+    ],
+    "exclude": [
+      "run_shell_command(rm)"
+    ]
+  },
+  "sandbox": "sandbox-exec"
+}

@@ -113,6 +113,6 @@ function parseSSE(text: string): SSEEvent | null {
     }
   }
 
-  if (!data) return null;
+  if (!hasData) return null;
   return { event, data };
 }
