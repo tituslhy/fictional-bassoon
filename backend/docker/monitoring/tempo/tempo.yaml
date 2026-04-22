@@ -15,19 +15,3 @@ storage:
       path: /tmp/tempo/wal
     local:
       path: /tmp/tempo/blocks
-
-ingester:
-  lifecycler:
-    address: 127.0.0.1
-    ring:
-      kvstore:
-        store: inmemory
-      replication_factor: 1
-    final_sleep: 0s
-  chunk_idle_period: 1m
-  max_chunk_age: 1m
-
-compactor:
-  config:
-    max_compaction_objects: 1000000
-    compaction_cycle: 30s

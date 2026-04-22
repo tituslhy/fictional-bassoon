@@ -1,84 +1,102 @@
 # Project Context: fictional-bassoon
 
-This project is a full-stack AI chat application designed to stream real-time agent reasoning, tool calls, tool results, and final answers using Server-Sent Events (SSE). It leverages a FastAPI backend with LangGraph for agent orchestration, Celery for background processing, and a Next.js frontend for a reactive user experience.
+This project is a high-performance, full-stack AI chat application designed to stream real-time agent reasoning, tool calls, tool results, and final answers using Server-Sent Events (SSE). It utilizes a distributed architecture with a FastAPI backend, LangGraph for agent orchestration, and Celery for asynchronous task processing.
 
-## Project Overview
+## Architecture & Data Flow
 
-- **Purpose:** Provide a robust, streaming-first AI chat interface.
-- **Architecture:** 
-  - **Backend (`backend/`):** FastAPI handles HTTP requests. `/chat` enqueues tasks to Celery and subscribes to a Redis channel to stream events back to the client via SSE.
-  - **Worker:** A Celery worker executes the LangGraph agent asynchronously, publishing events to Redis Pub/Sub.
-  - **Frontend (`frontend/`):** A Next.js 14 application (App Router) that consumes the SSE stream and manages conversation threads.
-- **Key Technologies:**
-  - **Backend:** FastAPI, LangGraph, Celery, Redis, PostgreSQL (Checkpointer), OpenAI GPT-4.
-  - **Frontend:** Next.js 14, TypeScript, Tailwind CSS, Lucide React.
-  - **Infrastructure:** RabbitMQ (Broker), Redis (Pub/Sub), PostgreSQL (Session State).
+```mermaid
+graph TD
+    subgraph Frontend [Next.js]
+        Hook[useSSEStream]
+    end
 
-## Building and Running
+    subgraph API [FastAPI]
+        Chat[/chat]
+    end
 
-### Backend Setup
-1. **Environment:** Use `uv` for dependency management.
-   ```bash
-   cd backend
-   uv sync
-   source .venv/bin/activate
-   ```
-2. **Infrastructure:** Ensure RabbitMQ, Redis, and PostgreSQL are running.
-   ```bash
-   docker compose up -d
-   ```
-3. **Run Celery Worker (Required):**
-   ```bash
-   celery -A src.celery_app worker --loglevel=info
-   ```
-4. **Run FastAPI Server:**
-   ```bash
-   uvicorn main:app --reload
-   ```
+    subgraph Async [Celery & Redis]
+        Worker[Celery Worker]
+        PubSub[Redis Pub/Sub]
+    end
 
-### Frontend Setup
-1. **Install Dependencies:**
-   ```bash
-   cd frontend
-   npm install
-   ```
-2. **Run Development Server:**
-   ```bash
-   npm run dev
-   ```
+    subgraph Intelligence [LangGraph]
+        Agent[Agent Graph]
+        DB[(PostgreSQL)]
+    end
 
-### Testing
-- **Backend:** `uv run pytest` or `uv run tox` for cross-version testing.
+    Hook -->|POST| Chat
+    Chat -->|Subscribe| PubSub
+    Chat -->|Enqueue| Worker
+    Worker -->|Execute| Agent
+    Agent -->|Publish| PubSub
+    Agent -->|Checkpoint| DB
+    PubSub -->|Stream| Chat
+    Chat -->|SSE| Hook
+```
 
-## Development Conventions
+- **Backend (`backend/`):** FastAPI manages the SSE connection. It generates a unique `job_id` for every request, subscribes to a corresponding Redis Pub/Sub channel, and yields messages as they arrive.
+- **Worker:** A Celery worker (using RabbitMQ as a broker) executes the agent. It publishes serialized events to the specific Redis channel, ensuring the API layer remains non-blocking.
+- **Streaming Pipeline:** Events are emitted via LangGraph's `astream` (v2) with `stream_mode=["messages", "updates"]`.
 
-### Backend Standards
-- **File Responsibilities:**
-  - `main.py`: Thin entry point (~90 lines), handles `/chat` and `/health` only. No business logic.
-  - `src/agent.py`: LangGraph agent construction. Instantiated at module level (no factory wrappers).
-  - `src/models/`: Pydantic models only.
-  - `src/worker/tasks.py`: Bridges sync Celery tasks to async execution.
-  - `utils/streaming.py`: Converts LangGraph events into SSE-compatible dicts.
-- **Code Quality:** Use Google-style docstrings. Comments should explain *why*, not *what*.
-- **Pydantic:** Strictly use Pydantic for all request/response schemas.
+## Monitoring Stack (LGTM)
 
-### Frontend Standards
-- **Framework:** Next.js App Router with TypeScript (strict mode).
-- **Styling:** Tailwind CSS only. Avoid custom CSS files.
-- **SSE Handling:** Implement `useSSEStream` hook to handle `reasoning`, `tool_call`, `tool_result`, `answer`, `agent`, `error`, and `done` events.
-- **UI:** Display reasoning tokens distinctly (e.g., italicized or in a collapsible section).
+The infrastructure includes a pre-configured observability stack:
+- **Loki:** Aggregates logs from all Docker containers via Grafana Alloy.
+- **Grafana:** Centralized dashboarding for metrics, logs, and traces.
+- **Tempo:** Distributed tracing (OTLP) for identifying latency in agent tool calls.
+- **Prometheus:** Scrapes metrics from FastAPI, Celery Workers, RabbitMQ, Redis, and Postgres.
+- **Redis Insight:** Real-time visibility into the Pub/Sub and caching layer.
 
-### Streaming Patterns (Non-negotiable)
-- **LangGraph Config:** 
-  - `stream_mode=["messages", "updates"]`
-  - `version="v2"`
-  - `subgraphs=True`
-- **Reasoning:** Content must live in `content_blocks`, never in `additional_kwargs`.
+## Project Structure
 
-## Key Files & Locations
-- **API Routes:** `backend/main.py`
-- **Agent Logic:** `backend/src/agent.py`
-- **SSE Conversion:** `backend/utils/streaming.py`
-- **Frontend Hook:** `frontend/src/hooks/useSSEStream.ts`
-- **Thread State:** `frontend/src/context/ThreadContext.tsx`
-- **Rules & Standards:** `.claude/rules/`
+```bash
+fictional-bassoon/
+├── backend/
+│   ├── main.py              # Entry point, SSE logic
+│   ├── src/
+│   │   ├── agent.py         # LangGraph definition
+│   │   ├── celery_app.py    # Worker & Metrics setup
+│   │   ├── queue/           # Redis Pub/Sub management
+│   │   └── worker/          # Task orchestration
+│   ├── docker/              # Monitoring & Deployment config
+│   └── tests/               # Backend testing
+└── frontend/
+    ├── src/
+    │   ├── app/             # UI Pages
+    │   ├── components/      # React Components
+    │   ├── context/         # Thread State
+    │   ├── hooks/           # SSE logic (useSSEStream)
+    │   └── types/           # TS Interfaces
+```
+
+## Technical Standards
+
+### Streaming Contract
+- **Event Types:** `reasoning`, `tool_call`, `tool_result`, `answer`, `agent`, `error`, `done`.
+- **Reasoning:** Captured from `AIMessageChunk.content_blocks`.
+- **Concurrency:** Every Celery task maintains its own isolated event loop and connection pool to prevent `RuntimeError: Event loop is closed`.
+
+### Observability
+- **Metrics:** FastAPI is instrumented with `prometheus-fastapi-instrumentator`. Celery workers run a sidecar metrics server on port `8001`.
+- **Logs:** Structured logging is piped to Loki with `container_name` labels.
+
+## Build & Run
+
+### 1. Infrastructure
+```bash
+cd backend
+docker compose up -d
+```
+
+### 2. Backend & Worker
+```bash
+# In separate terminals
+celery -A src.celery_app worker --loglevel=info
+uvicorn main:app --reload
+```
+
+### 3. Frontend
+```bash
+cd frontend
+npm run dev
+```

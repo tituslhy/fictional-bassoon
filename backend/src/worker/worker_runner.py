@@ -3,7 +3,7 @@
 import logging
 from psycopg_pool import AsyncConnectionPool
 from src.agent import get_agent
-from src.queue.redis_pubsub import publish_event
+from src.queue.redis_pubsub import publish_event, get_redis_connection
 from utils.streaming import stream_agent_events
 
 logger = logging.getLogger("backend")
@@ -17,6 +17,8 @@ async def run_agent_and_stream(request):
         request.thread_id,
     )
 
+    # get_agent() now returns a fresh agent with its own checkpointer and pool.
+    # This is critical for Celery workers to avoid 'Event loop is closed' errors.
     agent = get_agent()
     
     # Ensure the checkpointer pool is open and setup is called
@@ -24,23 +26,32 @@ async def run_agent_and_stream(request):
     # For AsyncPostgresSaver, the pool is typically stored in 'conn'
     conn = getattr(checkpointer, 'conn', None)
     
-    if isinstance(conn, AsyncConnectionPool):
-        # We only need to open the pool if it's not already open or opening.
-        # AsyncConnectionPool.open() is idempotent if already open or returns immediately.
-        try:
-            # We open the pool to ensure it's ready.
-            # In Celery's fork pool, each process will have its own lazy global 'agent'
-            # and thus its own 'pool'.
-            await conn.open()
-            # setup() creates the checkpoint tables if they don't exist
-            # This is also safe to call multiple times as it uses IF NOT EXISTS.
-            await checkpointer.setup()
-        except Exception as e:
-            logger.debug("Error ensuring pool is open or during setup: %s", e)
+    try:
+        if isinstance(conn, AsyncConnectionPool):
+            # We open the pool specifically for this task's event loop.
+            try:
+                await conn.open()
+                # setup() creates the checkpoint tables if they don't exist
+                await checkpointer.setup()
+            except Exception as e:
+                logger.error("Error ensuring pool is open or during setup: %s", e)
+                raise
 
-    event_count = 0
-    async for event in stream_agent_events(agent, request):
-        await publish_event(request.job_id, event)
-        event_count += 1
+        # Use a fresh Redis connection for this task's event loop.
+        async with get_redis_connection() as redis:
+            event_count = 0
+            async for event in stream_agent_events(agent, request):
+                await publish_event(request.job_id, event, client=redis)
+                event_count += 1
 
-    logger.info("agent run complete: %d events published", event_count)
+            logger.info("agent run complete: %d events published", event_count)
+
+    finally:
+        # Crucial: Close the pool at the end of the task to release resources
+        # and avoid loop binding issues in subsequent tasks.
+        if isinstance(conn, AsyncConnectionPool):
+            try:
+                await conn.close()
+                logger.info("checkpointer pool closed")
+            except Exception as e:
+                logger.warning("Error closing checkpointer pool: %s", e)

@@ -16,50 +16,40 @@ _ = load_dotenv(find_dotenv())
 
 logger = logging.getLogger("backend")
 
-# Lazy global to avoid module-level DB connection attempts
-_AGENT_COMPILED: CompiledStateGraph | None = None
-_AGENT_LOCK = threading.Lock()
+def create_agent(checkpointer=None) -> CompiledStateGraph:
+    """Create a new agent instance with the given checkpointer."""
+    logger.info("Creating agent instance...")
+    return create_deep_agent(
+        model=init_chat_model(model="openai:gpt-5.4-nano", temperature=0),
+        tools=[TavilySearch(max_results=5)],
+        checkpointer=checkpointer,
+    )
 
 def get_agent() -> CompiledStateGraph:
-    """Return the shared compiled deep agent, initializing it if necessary."""
-    global _AGENT_COMPILED
+    """Return an agent instance, initializing a checkpointer if needed."""
+    # Note: In worker tasks, it is safer to create a fresh checkpointer/pool
+    # for each task to avoid 'Event loop is closed' errors.
     
-    if _AGENT_COMPILED is not None:
-        return _AGENT_COMPILED
-        
-    with _AGENT_LOCK:
-        if _AGENT_COMPILED is not None:
-            return _AGENT_COMPILED
-            
-        # Import DB dependencies inside the lock to avoid module-level side effects
-        try:
-            from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-            from psycopg_pool import AsyncConnectionPool
-        except ImportError as e:
-            logger.error("Failed to import database dependencies: %s", e)
-            raise RuntimeError("Database dependencies (psycopg, libpq) are required to run the agent.") from e
+    # Import DB dependencies
+    try:
+        from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+        from psycopg_pool import AsyncConnectionPool
+    except ImportError as e:
+        logger.error("Failed to import database dependencies: %s", e)
+        raise RuntimeError("Database dependencies (psycopg, libpq) are required to run the agent.") from e
 
-        # Get DB URI
-        db_uri = os.getenv("DB_URI")
-        if not db_uri:
-            raise RuntimeError("DB_URI environment variable is not set")
+    # Get DB URI
+    db_uri = os.getenv("DB_URI")
+    if not db_uri:
+        raise RuntimeError("DB_URI environment variable is not set")
 
-        # Initialize DB pool and checkpointer
-        # We explicitly use AsyncConnectionPool so we can manage its lifecycle
-        logger.info("Initializing Async Postgres checkpointer...")
-        pool = AsyncConnectionPool(
-            conninfo=db_uri,
-            kwargs={"autocommit": True, "prepare_threshold": 0},
-            open=False # Pool will be opened in worker_runner to ensure it happens in the async loop
-        )
-        checkpointer = AsyncPostgresSaver(pool)
+    # Initialize DB pool and checkpointer
+    logger.info("Initializing Async Postgres checkpointer...")
+    pool = AsyncConnectionPool(
+        conninfo=db_uri,
+        kwargs={"autocommit": True, "prepare_threshold": 0},
+        open=False 
+    )
+    checkpointer = AsyncPostgresSaver(pool)
 
-        # Create agent
-        logger.info("Creating deep agent instance...")
-        _AGENT_COMPILED = create_deep_agent(
-            model=init_chat_model(model="openai:gpt-5.4-nano", temperature=0),
-            tools=[TavilySearch(max_results=5)],
-            checkpointer=checkpointer,
-        )
-        
-        return _AGENT_COMPILED
+    return create_agent(checkpointer=checkpointer)

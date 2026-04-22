@@ -9,11 +9,23 @@ services:
       POSTGRES_DB: fictional_bassoon
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks:
+      - app_network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
       timeout: 3s
       retries: 5
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:latest
+    environment:
+      DATA_SOURCE_NAME: "postgresql://postgres:postgres@postgres:5432/fictional_bassoon?sslmode=disable"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - app_network
 
   redis:
     image: redis:7-alpine
@@ -21,22 +33,45 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    networks:
+      - app_network
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 5
 
+  redis-exporter:
+    image: oliver006/redis_exporter:latest
+    environment:
+      - REDIS_ADDR=redis:6379
+    depends_on:
+      - redis
+    networks:
+      - app_network
+
+  redis-insight:
+    image: redis/redisinsight:latest
+    ports:
+      - "5540:5540"
+    networks:
+      - app_network
+    depends_on:
+      - redis
+
   rabbitmq:
     image: rabbitmq:3-management-alpine
     ports:
       - "5672:5672"
       - "15672:15672"
+      - "15692:15692" # Prometheus metrics port
     environment:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - app_network
     healthcheck:
       test: ["CMD", "nc", "-z", "localhost", "5672"]
       interval: 5s
@@ -65,6 +100,8 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+    networks:
+      - app_network
     volumes:
       - logs:/app/logs
 
@@ -73,6 +110,8 @@ services:
       context: .
       dockerfile: docker/Dockerfile
     command: uv run celery -A src.celery_app worker --loglevel=info
+    ports:
+      - "8001:8001" # Prometheus metrics server on 8001
     env_file:
       - .env
     environment:
@@ -82,6 +121,7 @@ services:
       DB_URI: postgresql://postgres:postgres@postgres:5432/fictional_bassoon
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       TAVILY_API_KEY: ${TAVILY_API_KEY}
+      METRICS_PORT: 8001
     depends_on:
       postgres:
         condition: service_healthy
@@ -89,6 +129,8 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+    networks:
+      - app_network
     volumes:
       - logs:/app/logs
 
@@ -100,6 +142,9 @@ services:
     command: -config.file=/etc/loki/local-config.yaml
     volumes:
       - ./docker/monitoring/loki/loki-config.yaml:/etc/loki/local-config.yaml
+      - loki_data:/loki
+    networks:
+      - app_network
 
   prometheus:
     image: prom/prometheus:latest
@@ -107,18 +152,31 @@ services:
       - "9090:9090"
     volumes:
       - ./docker/monitoring/prometheus/prometheus.yaml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    depends_on:
+      - backend
+      - celery_worker
+      - postgres-exporter
+      - redis-exporter
+    networks:
+      - app_network
 
   tempo:
     image: grafana/tempo:latest
+    user: root
     command: [ "-config.file=/etc/tempo.yaml" ]
     volumes:
       - ./docker/monitoring/tempo/tempo.yaml:/etc/tempo.yaml
+      - tempo_data:/tmp/tempo
     ports:
       - "3200:3200"   # tempo
       - "4317:4317"   # otlp grpc
       - "4318:4318"   # otlp http
+    networks:
+      - app_network
 
   grafana:
     image: grafana/grafana:latest
@@ -126,6 +184,7 @@ services:
       - "3001:3000"
     volumes:
       - ./docker/monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - grafana_data:/var/lib/grafana
     environment:
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
@@ -134,6 +193,8 @@ services:
       - loki
       - prometheus
       - tempo
+    networks:
+      - app_network
 
   alloy:
     image: grafana/alloy:latest
@@ -147,9 +208,19 @@ services:
     command: run --storage.path=/var/lib/alloy/data --server.http.listen-addr=0.0.0.0:12345 /etc/alloy/config.alloy
     depends_on:
       - loki
+    networks:
+      - app_network
+
+networks:
+  app_network:
+    driver: bridge
 
 volumes:
   redis_data:
   rabbitmq_data:
   postgres_data:
   logs:
+  prometheus_data:
+  grafana_data:
+  loki_data:
+  tempo_data:

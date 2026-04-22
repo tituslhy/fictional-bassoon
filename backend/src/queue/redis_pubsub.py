@@ -3,20 +3,44 @@
 import json
 import logging
 import os
-
 import redis.asyncio as redis
+from contextlib import asynccontextmanager
 
 logger = logging.getLogger("backend")
 
-redis_client = redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379"))
+def get_redis_client():
+    """Create a new Redis client for the current event loop."""
+    return redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379"))
 
+# For backward compatibility and FastAPI
+redis_client = get_redis_client()
 
-async def publish_event(job_id: str, event: dict):
-    """Publish a single SSE event dict to the ``stream:{job_id}`` channel."""
+@asynccontextmanager
+async def get_redis_connection():
+    """Context manager to get a Redis connection and ensure it is closed."""
+    client = get_redis_client()
+    try:
+        yield client
+    finally:
+        await client.close()
+
+async def publish_event(job_id: str, event: dict, client=None):
+    """Publish a single SSE event dict to the ``stream:{job_id}`` channel.
+    
+    Args:
+        job_id: The job ID to publish to.
+        event: The event dictionary to publish.
+        client: Optional Redis client. If not provided, a new one is created/closed.
+    """
     channel = f"stream:{job_id}"
-    await redis_client.publish(channel, json.dumps(event))
+    
+    if client:
+        await client.publish(channel, json.dumps(event))
+    else:
+        async with get_redis_connection() as conn:
+            await conn.publish(channel, json.dumps(event))
+    
     logger.debug("published event to %s: %s", channel, event.get("event"))
-
 
 async def subscribe(job_id: str):
     """Subscribe to the ``stream:{job_id}`` pub/sub channel and return the pub/sub object."""
