@@ -96,23 +96,27 @@ function parseSSE(text: string): SSEEvent | null {
   const lines = text.split("\n");
   let event: SSEEventType = "reasoning";
   let data = "";
-  let isFirstDataLine = true;
+  let hasData = false;
 
   for (const line of lines) {
     if (line.startsWith("event:")) {
       event = line.slice(6).trim() as SSEEventType;
-    }
-    if (line.startsWith("data:")) {
-      const payload = line.slice(5);
-      if (isFirstDataLine) {
+    } else if (line.startsWith("data:")) {
+      let payload = line.slice(5);
+      // SSE spec: If value starts with a space, remove it
+      if (payload.startsWith(" ")) {
+        payload = payload.slice(1);
+      }
+      
+      if (!hasData) {
         data = payload;
-        isFirstDataLine = false;
+        hasData = true;
       } else {
         data += "\n" + payload;
       }
     }
   }
 
-  if (isFirstDataLine) return null;
+  if (!hasData) return null;
   return { event, data };
 }

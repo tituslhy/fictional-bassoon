@@ -68,16 +68,23 @@ async def chat(request: ChatRequest):
                     continue
 
                 event = json.loads(message["data"])
+                event_type = event.pop('event', 'message')
+                
+                # If there are extra fields (like tool_call_id), or if the event
+                # is complex, we send the remaining event dict as a JSON string.
+                # For simple events with just 'data', we send just the data string.
+                if len(event) == 1 and 'data' in event and isinstance(event['data'], str):
+                    data_payload = event['data']
+                else:
+                    data_payload = json.dumps(event)
 
                 # Format as SSE:
                 # event: <type>
                 # data: <content> (split multiline content across multiple data: lines)
                 # <blank line>
-                event_type = event['event']
-                data_content = event['data']
-
+                
                 # Split data content on newlines and emit each line prefixed with "data: "
-                data_lines = data_content.split('\n')
+                data_lines = data_payload.split('\n')
                 sse_output = f"event: {event_type}\n"
                 for line in data_lines:
                     sse_output += f"data: {line}\n"
@@ -85,7 +92,7 @@ async def chat(request: ChatRequest):
 
                 yield sse_output
 
-                if event["event"] == "done":
+                if event_type == "done":
                     break
 
         finally:

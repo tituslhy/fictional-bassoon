@@ -4,7 +4,7 @@ import { useCallback, useRef } from "react";
 import { useThreadsContext } from "@/context/ThreadContext";
 import { useThreadStore } from "@/context/ThreadContext";
 import { useSSEStream } from "@/hooks/useSSEStream";
-import type { SSEEvent, ThreadMessage, ToolCall } from "@/types";
+import type { SSEEvent, ThreadMessage } from "@/types";
 import MessageList from "./MessageList";
 import MessageInput from "./MessageInput";
 import Sidebar from "@/components/sidebar/Sidebar";
@@ -127,29 +127,46 @@ export default function Chat() {
       }
 
       case "tool_call": {
-        let parsed: { name: string; args: string };
+        let parsed: { name?: string; args?: unknown; id?: string; index?: number };
         try {
-          const obj = JSON.parse(event.data);
-          if (obj.name && obj.args) {
-            parsed = obj;
-          } else {
-            const match = event.data.match(/^([^(]+)\(([\s\S]*)\)$/);
-            parsed = match ? { name: match[1], args: match[2] } : { name: "unknown", args: event.data };
-          }
+          parsed = JSON.parse(event.data);
         } catch {
+          // Fallback for non-JSON data
           const match = event.data.match(/^([^(]+)\(([\s\S]*)\)$/);
           parsed = match ? { name: match[1], args: match[2] } : { name: "unknown", args: event.data };
         }
 
-        const newToolCall: ToolCall = {
-          id: crypto.randomUUID(),
-          name: parsed.name,
-          args: parsed.args,
-          expanded: false,
-        };
+        // Aggregate tool calls by index or id
+        const toolCalls = [...(msg.toolCalls || [])];
+        const existingIdx = toolCalls.findIndex(
+          (tc) => 
+            (parsed.id && tc.id === parsed.id) || 
+            (parsed.index !== undefined && tc.index === parsed.index)
+        );
+
+        if (existingIdx >= 0) {
+          // Update existing tool call
+          const tc = toolCalls[existingIdx];
+          toolCalls[existingIdx] = {
+            ...tc,
+            name: (parsed.name || tc.name || "unknown"),
+            args: (tc.args || "") + (typeof parsed.args === "string" ? parsed.args : JSON.stringify(parsed.args || "")),
+            id: parsed.id || tc.id,
+          };
+        } else {
+          // Create new tool call
+          toolCalls.push({
+            id: parsed.id || crypto.randomUUID(),
+            index: parsed.index,
+            name: parsed.name || "unknown",
+            args: typeof parsed.args === "string" ? parsed.args : JSON.stringify(parsed.args || ""),
+            expanded: false,
+          });
+        }
+
         const updatedMsg: ThreadMessage = {
           ...msg,
-          toolCalls: [...(msg.toolCalls || []), newToolCall],
+          toolCalls,
         };
         currentAssistantRef.current = updatedMsg;
 
@@ -169,18 +186,28 @@ export default function Chat() {
       }
 
       case "tool_result": {
-        let content: string;
+        let resultData: { data: string; tool_call_id?: string } | string;
         try {
-          JSON.parse(event.data);
-          content = event.data;
+          resultData = JSON.parse(event.data);
         } catch {
-          content = event.data;
+          resultData = event.data;
         }
+
+        const content = typeof resultData === "string" ? resultData : resultData.data;
+        const toolCallId = typeof resultData === "object" ? resultData.tool_call_id : undefined;
+
         const updatedMsg: ThreadMessage = {
           ...msg,
-          toolCalls: (msg.toolCalls || []).map((tc) =>
-            tc.result ? tc : { ...tc, result: content },
-          ),
+          toolCalls: (msg.toolCalls || []).map((tc) => {
+            // Match by ID if available, otherwise match the first one without a result
+            if (toolCallId && tc.id === toolCallId) {
+              return { ...tc, result: content };
+            }
+            if (!toolCallId && !tc.result) {
+              return { ...tc, result: content };
+            }
+            return tc;
+          }),
         };
         currentAssistantRef.current = updatedMsg;
 
