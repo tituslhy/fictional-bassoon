@@ -36,7 +36,7 @@ graph TD
 
 - **Backend (`backend/`):** FastAPI manages the SSE connection. It generates a unique `job_id` for every request, subscribes to a corresponding Redis Pub/Sub channel, and yields messages as they arrive.
 - **Worker:** A Celery worker (using RabbitMQ as a broker) executes the agent. It publishes serialized events to the specific Redis channel, ensuring the API layer remains non-blocking.
-- **Streaming Pipeline:** Events are emitted via LangGraph's `astream` (v2) with `stream_mode=["messages", "updates"]`.
+- **Streaming Pipeline:** Events are emitted via LangGraph's `astream` with `stream_mode=["messages","updates"]`, `version="v2"`, and `subgraphs=True`.
 
 ## Monitoring Stack (LGTM)
 

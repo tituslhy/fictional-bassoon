@@ -72,6 +72,9 @@ services:
       - rabbitmq_data:/var/lib/rabbitmq
     networks:
       - app_network
+    command: >
+      sh -c "rabbitmq-plugins enable --offline rabbitmq_prometheus &&
+             docker-entrypoint.sh rabbitmq-server"
     healthcheck:
       test: ["CMD", "nc", "-z", "localhost", "5672"]
       interval: 5s
@@ -181,14 +184,13 @@ services:
   grafana:
     image: grafana/grafana:latest
     ports:
-      - "3001:3000"
+      - "127.0.0.1:3001:3000"
     volumes:
       - ./docker/monitoring/grafana/provisioning:/etc/grafana/provisioning
       - grafana_data:/var/lib/grafana
     environment:
-      - GF_AUTH_ANONYMOUS_ENABLED=true
-      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
-      - GF_AUTH_DISABLE_LOGIN_FORM=true
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
     depends_on:
       - loki
       - prometheus
@@ -198,14 +200,12 @@ services:
 
   alloy:
     image: grafana/alloy:latest
-    user: root
     ports:
-      - "12345:12345"
+      - "127.0.0.1:12345:12345"
     volumes:
       - ./docker/monitoring/alloy/config.alloy:/etc/alloy/config.alloy
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
-    command: run --storage.path=/var/lib/alloy/data --server.http.listen-addr=0.0.0.0:12345 /etc/alloy/config.alloy
+    command: run --storage.path=/var/lib/alloy/data --server.http.listen-addr=127.0.0.1:12345 /etc/alloy/config.alloy
     depends_on:
       - loki
     networks:

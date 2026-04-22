@@ -25,11 +25,17 @@ def create_agent(checkpointer=None) -> CompiledStateGraph:
         checkpointer=checkpointer,
     )
 
-def get_agent() -> CompiledStateGraph:
-    """Return an agent instance, initializing a checkpointer if needed."""
-    # Note: In worker tasks, it is safer to create a fresh checkpointer/pool
-    # for each task to avoid 'Event loop is closed' errors.
-    
+async def get_agent() -> CompiledStateGraph:
+    """Return an agent instance, initializing a checkpointer if needed.
+
+    Lifecycle contract:
+    - Creates an AsyncConnectionPool and opens it
+    - Initializes AsyncPostgresSaver and calls setup()
+    - Caller must close the pool after use (via agent.checkpointer.conn.close())
+
+    Note: In worker tasks, it is safer to create a fresh checkpointer/pool
+    for each task to avoid 'Event loop is closed' errors.
+    """
     # Import DB dependencies
     try:
         from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
@@ -48,8 +54,10 @@ def get_agent() -> CompiledStateGraph:
     pool = AsyncConnectionPool(
         conninfo=db_uri,
         kwargs={"autocommit": True, "prepare_threshold": 0},
-        open=False 
+        open=False
     )
+    await pool.open()
     checkpointer = AsyncPostgresSaver(pool)
+    await checkpointer.setup()
 
     return create_agent(checkpointer=checkpointer)

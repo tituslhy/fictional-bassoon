@@ -21,7 +21,12 @@ celery_app.conf.imports = ("src.worker.tasks",)
 def start_metrics_server(sender, **kwargs):
     """Start a small HTTP server to export Prometheus metrics from the worker."""
     # Use 8001 by default for worker to avoid conflict with backend on 8000
-    metrics_port = int(os.getenv("METRICS_PORT", "8001"))
+    try:
+        metrics_port = int(os.getenv("METRICS_PORT", "8001"))
+    except (ValueError, TypeError):
+        logger.error("Invalid METRICS_PORT value, falling back to default 8001")
+        metrics_port = 8001
+
     logger.info("Starting Prometheus metrics server on port %d", metrics_port)
     # Start the server in a separate thread so it doesn't block the worker
     try:

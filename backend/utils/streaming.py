@@ -105,11 +105,14 @@ def _handle_completed_message(message: AnyMessage):
         content = message.content
         if not isinstance(content, str):
             content = json.dumps(content)
-        
-        events.append({
-            "event": "tool_result", 
+
+        payload = json.dumps({
             "data": content,
             "tool_call_id": message.tool_call_id
+        })
+        events.append({
+            "event": "tool_result",
+            "data": payload
         })
 
     return events

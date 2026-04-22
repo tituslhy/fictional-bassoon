@@ -2,25 +2,24 @@
 
 import json
 import logging
+from pathlib import Path
+from logging.config import fileConfig
 
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from logging.config import fileConfig
 from prometheus_fastapi_instrumentator import Instrumentator
+from redis.exceptions import RedisError
 
-from pathlib import Path
+from src.models.chat_models import ChatRequest, HealthResponse
+from src.queue.redis_pubsub import subscribe, redis_client
+from src.worker.tasks import run_agent_task
 
 # Configure logging from INI file
 LOGGING_CONFIG_PATH = Path(__file__).parent / "logging.ini"
 fileConfig(LOGGING_CONFIG_PATH, disable_existing_loggers=False)
 logger = logging.getLogger("backend")
-
-from src.models.chat_models import ChatRequest, HealthResponse
-from src.queue.redis_pubsub import subscribe, redis_client
-from redis.exceptions import RedisError
-from src.worker.tasks import run_agent_task
 
 app = FastAPI()
 

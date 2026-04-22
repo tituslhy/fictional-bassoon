@@ -21,7 +21,7 @@ export default function Chat() {
   const handleMessageEvent = useCallback((event: SSEEvent) => {
     const store = storeRef.current;
     const targetThreadId = streamingTargetThreadIdRef.current;
-    if (!activeThreadId) return;
+    if (!targetThreadId) return;
 
     if (event.event === "agent") return;
 
@@ -136,11 +136,12 @@ export default function Chat() {
           parsed = match ? { name: match[1], args: match[2] } : { name: "unknown", args: event.data };
         }
 
-        // Aggregate tool calls by index or id
+        // Aggregate tool calls by index or id, using trackingKey for reconciliation
         const toolCalls = [...(msg.toolCalls || [])];
         const existingIdx = toolCalls.findIndex(
-          (tc) => 
-            (parsed.id && tc.id === parsed.id) || 
+          (tc) =>
+            (parsed.id && tc.id === parsed.id) ||
+            (parsed.id && tc.trackingKey === parsed.id) ||
             (parsed.index !== undefined && tc.index === parsed.index)
         );
 
@@ -152,11 +153,14 @@ export default function Chat() {
             name: (parsed.name || tc.name || "unknown"),
             args: (tc.args || "") + (typeof parsed.args === "string" ? parsed.args : JSON.stringify(parsed.args || "")),
             id: parsed.id || tc.id,
+            index: parsed.index !== undefined ? parsed.index : tc.index,
           };
         } else {
-          // Create new tool call
+          // Create new tool call with tracking key
+          const syntheticId = crypto.randomUUID();
           toolCalls.push({
-            id: parsed.id || crypto.randomUUID(),
+            id: parsed.id || syntheticId,
+            trackingKey: parsed.id || syntheticId,
             index: parsed.index,
             name: parsed.name || "unknown",
             args: typeof parsed.args === "string" ? parsed.args : JSON.stringify(parsed.args || ""),
@@ -196,6 +200,7 @@ export default function Chat() {
         const content = typeof resultData === "string" ? resultData : resultData.data;
         const toolCallId = typeof resultData === "object" ? resultData.tool_call_id : undefined;
 
+        let fallbackApplied = false;
         const updatedMsg: ThreadMessage = {
           ...msg,
           toolCalls: (msg.toolCalls || []).map((tc) => {
@@ -203,7 +208,8 @@ export default function Chat() {
             if (toolCallId && tc.id === toolCallId) {
               return { ...tc, result: content };
             }
-            if (!toolCallId && !tc.result) {
+            if (!toolCallId && !tc.result && !fallbackApplied) {
+              fallbackApplied = true;
               return { ...tc, result: content };
             }
             return tc;
@@ -244,7 +250,7 @@ export default function Chat() {
               const firstUser = msgs.find((m) => m.role === "user");
               if (firstUser) {
                 const title = firstUser.content.slice(0, 40) + (firstUser.content.length > 40 ? "..." : "");
-                store.updateThreadTitle(activeThreadId, title);
+                store.updateThreadTitle(targetThreadId, title);
               }
             }
           }

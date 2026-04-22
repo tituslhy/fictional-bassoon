@@ -42,8 +42,10 @@ restart:
 	cd "frontend" && docker compose restart
 
 logs:
-	# This will follow logs from both projects
-	docker compose -f "backend/docker-compose.yaml" -f "frontend/docker-compose.yaml" logs -f
+	@echo "Streaming logs from backend and frontend services..."
+	@(cd "backend" && docker compose logs -f) & \
+	(cd "frontend" && docker compose logs -f) & \
+	wait
 
 clean:
 	cd "backend" && docker compose down -v --remove-orphans --rmi local

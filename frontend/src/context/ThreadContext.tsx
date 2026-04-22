@@ -31,7 +31,11 @@ export function ThreadProvider({ children }: { children: ReactNode }) {
         const parsed = JSON.parse(saved);
         setThreadsState(parsed);
         if (parsed.length > 0) {
-          setActiveThreadIdState(parsed[0].id);
+          // Choose the thread with the latest updatedAt
+          const latest = parsed.reduce((prev: Thread, curr: Thread) =>
+            curr.updatedAt > prev.updatedAt ? curr : prev
+          );
+          setActiveThreadIdState(latest.id);
         }
       } catch (err) {
         console.error("Failed to load threads:", err);
