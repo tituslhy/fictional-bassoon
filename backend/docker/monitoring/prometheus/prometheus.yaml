@@ -14,9 +14,13 @@ scrape_configs:
     static_configs:
       - targets: ['celery_worker:8001']
 
-  - job_name: 'postgres'
+  - job_name: 'citus'
     static_configs:
-      - targets: ['postgres-exporter:9187']
+      - targets: ['citus_coordinator_exporter:9187', 'citus_worker_1_exporter:9187', 'citus_worker_2_exporter:9187']
+
+  - job_name: 'pgbouncer'
+    static_configs:
+      - targets: ['pgbouncer_exporter:9127']
 
   - job_name: 'redis'
     static_configs:

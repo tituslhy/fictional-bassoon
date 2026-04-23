@@ -22,10 +22,13 @@ graph LR
         Agent[LangGraph Agent]
     end
 
-    subgraph Infrastructure
+    subgraph Infrastructure [Distributed Data Layer]
         Broker[RabbitMQ Broker]
         PubSub[Redis Pub/Sub]
-        Checkpointer[PostgreSQL Checkpointer]
+        PgB[PgBouncer Pool]
+        CitusC[Citus Coordinator]
+        CW1[Citus Worker 1]
+        CW2[Citus Worker 2]
     end
 
     subgraph Monitoring
@@ -43,7 +46,13 @@ graph LR
     API -->|Enqueue Task| Broker
     Broker -->|Execute| Worker
     Worker -->|Run| Agent
-    Agent -->|Checkpoint| Checkpointer
+    
+    %% DB Flow
+    Agent -->|Checkpoint| PgB
+    PgB -->|Pool| CitusC
+    CitusC -->|Shard by thread_id| CW1
+    CitusC -->|Shard by thread_id| CW2
+    
     Agent -->|Publish Events| PubSub
     PubSub -->|SSE Stream| API
     API -->|Text/Event-Stream| SSE
@@ -52,7 +61,8 @@ graph LR
     %% Observability
     Worker -.->|Metrics| Prom
     API -.->|Metrics| Prom
-    PostgresExporter[Postgres Exporter] -.->|Metrics| Prom
+    PostgresExporter[Postgres Exporters] -.->|Metrics| Prom
+    PgBExporter[PgBouncer Exporter] -.->|Metrics| Prom
     RedisExporter[Redis Exporter] -.->|Metrics| Prom
     RabbitMQ -.->|Metrics| Prom
     
@@ -76,6 +86,7 @@ fictional-bassoon/
 │   │   └── worker/             # Task Definitions & Runner
 │   ├── utils/                  # Streaming & SSE Utilities
 │   ├── docker/                 # Dockerfiles & Monitoring Config
+│   │   ├── citus/              # DB Sharding Initialization
 │   │   └── monitoring/         # Grafana, Prometheus, Loki, etc.
 │   ├── tests/                  # Backend Test Suite
 │   └── docker-compose.yaml     # Infrastructure & Monitoring Stack
@@ -98,7 +109,7 @@ Ensure Docker is running and start the core services:
 cd backend
 docker compose up -d
 ```
-*This starts Postgres, Redis, RabbitMQ, and the full monitoring stack (Grafana, Prometheus, Loki, Tempo, Alloy).*
+*This starts a Citus Cluster (Coordinator + 2 Workers), PgBouncer, Redis, RabbitMQ, and the full monitoring stack.*
 
 ### 2. Backend Setup
 ```bash
@@ -135,7 +146,7 @@ The project includes a comprehensive monitoring suite available out-of-the-box:
 
 ### Custom Dashboards
 - **FastAPI Metrics & Logs:** Real-time request rates, durations, and combined logs from Backend and Worker.
-- **Microservice Health:** High-level "Up/Down" status for all infrastructure components.
+- **Microservice Health:** High-level "Up/Down" status for all components, including **Citus nodes and PgBouncer pool**.
 
 ## API Reference
 
@@ -144,6 +155,6 @@ Starts a streaming agent session. Returns an SSE stream.
 **Event types:** `reasoning`, `tool_call`, `tool_result`, `answer`, `agent`, `error`, `done`.
 
 ## Technology Stack
-- **Backend:** FastAPI, LangGraph, Celery, Redis Pub/Sub, PostgreSQL.
+- **Backend:** FastAPI, LangGraph, Celery, Redis Pub/Sub, **Citus (PostgreSQL Cluster), PgBouncer**.
 - **Frontend:** Next.js 14, TypeScript, Tailwind CSS, Lucide React.
 - **Observability:** LGTM Stack (Loki, Grafana, Tempo, Prometheus/Alloy).
