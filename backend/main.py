@@ -2,24 +2,24 @@
 
 import json
 import logging
+from pathlib import Path
+from logging.config import fileConfig
 
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from logging.config import fileConfig
+from prometheus_fastapi_instrumentator import Instrumentator
+from redis.exceptions import RedisError
 
-from pathlib import Path
+from src.models.chat_models import ChatRequest, HealthResponse
+from src.queue.redis_pubsub import subscribe, redis_client
+from src.worker.tasks import run_agent_task
 
 # Configure logging from INI file
 LOGGING_CONFIG_PATH = Path(__file__).parent / "logging.ini"
 fileConfig(LOGGING_CONFIG_PATH, disable_existing_loggers=False)
 logger = logging.getLogger("backend")
-
-from src.models.chat_models import ChatRequest, HealthResponse
-from src.queue.redis_pubsub import subscribe, redis_client
-from redis.exceptions import RedisError
-from src.worker.tasks import run_agent_task
 
 app = FastAPI()
 
@@ -29,6 +29,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Instrument FastAPI with Prometheus
+Instrumentator().instrument(app).expose(app)
 
 
 @app.post("/chat")
@@ -64,16 +67,23 @@ async def chat(request: ChatRequest):
                     continue
 
                 event = json.loads(message["data"])
+                event_type = event.pop('event', 'message')
+                
+                # If there are extra fields (like tool_call_id), or if the event
+                # is complex, we send the remaining event dict as a JSON string.
+                # For simple events with just 'data', we send just the data string.
+                if len(event) == 1 and 'data' in event and isinstance(event['data'], str):
+                    data_payload = event['data']
+                else:
+                    data_payload = json.dumps(event)
 
                 # Format as SSE:
                 # event: <type>
                 # data: <content> (split multiline content across multiple data: lines)
                 # <blank line>
-                event_type = event['event']
-                data_content = event['data']
-
+                
                 # Split data content on newlines and emit each line prefixed with "data: "
-                data_lines = data_content.split('\n')
+                data_lines = data_payload.split('\n')
                 sse_output = f"event: {event_type}\n"
                 for line in data_lines:
                     sse_output += f"data: {line}\n"
@@ -81,7 +91,7 @@ async def chat(request: ChatRequest):
 
                 yield sse_output
 
-                if event["event"] == "done":
+                if event_type == "done":
                     break
 
         finally:

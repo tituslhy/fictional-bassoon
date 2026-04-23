@@ -4,7 +4,7 @@ import { useCallback, useRef } from "react";
 import { useThreadsContext } from "@/context/ThreadContext";
 import { useThreadStore } from "@/context/ThreadContext";
 import { useSSEStream } from "@/hooks/useSSEStream";
-import type { SSEEvent, ThreadMessage, ToolCall } from "@/types";
+import type { SSEEvent, ThreadMessage } from "@/types";
 import MessageList from "./MessageList";
 import MessageInput from "./MessageInput";
 import Sidebar from "@/components/sidebar/Sidebar";
@@ -20,15 +20,15 @@ export default function Chat() {
 
   const handleMessageEvent = useCallback((event: SSEEvent) => {
     const store = storeRef.current;
-    const assistantRef = currentAssistantRef;
     const targetThreadId = streamingTargetThreadIdRef.current;
-    if (!activeThreadId) return;
+    if (!targetThreadId) return;
 
     if (event.event === "agent") return;
 
     if (event.event === "error") {
-      const errorMessage = assistantRef.current
-        ? { ...assistantRef.current, status: "done" as const, error: event.data }
+      const assistantMsg = currentAssistantRef.current;
+      const errorMessage: ThreadMessage = assistantMsg
+        ? { ...assistantMsg, status: "done" as const, error: event.data }
         : {
             id: crypto.randomUUID(),
             role: "assistant" as const,
@@ -38,7 +38,7 @@ export default function Chat() {
             status: "done" as const,
             error: event.data,
           };
-      assistantRef.current = errorMessage;
+      currentAssistantRef.current = errorMessage;
 
       // Mirror to store
       if (targetThreadId) {
@@ -59,7 +59,7 @@ export default function Chat() {
 
     // Create assistant message if it doesn't exist yet
     if (!currentAssistantRef.current) {
-      currentAssistantRef.current = {
+      const initialAssistantMsg: ThreadMessage = {
         id: crypto.randomUUID(),
         role: "assistant",
         content: "",
@@ -67,91 +67,121 @@ export default function Chat() {
         toolCalls: [],
         status: "streaming",
       };
+      currentAssistantRef.current = initialAssistantMsg;
 
       // Mirror initial creation to store
       if (targetThreadId) {
         const thread = store.threads.find((t) => t.id === targetThreadId);
         if (thread) {
-          store.updateThreadMessages(targetThreadId, [...thread.messages, assistantRef.current]);
+          store.updateThreadMessages(targetThreadId, [...thread.messages, initialAssistantMsg]);
         }
       }
     }
 
+    const msg = currentAssistantRef.current;
+    if (!msg) return;
+
     switch (event.event) {
-      case "reasoning":
-        assistantRef.current = {
-          ...assistantRef.current,
-          reasoning: (assistantRef.current.reasoning || "") + event.data,
+      case "reasoning": {
+        const updatedMsg: ThreadMessage = {
+          ...msg,
+          reasoning: (msg.reasoning || "") + event.data,
         };
+        currentAssistantRef.current = updatedMsg;
 
         // Mirror to store
         if (targetThreadId) {
           const thread = store.threads.find((t) => t.id === targetThreadId);
           if (thread) {
             const msgs = [...thread.messages];
-            const idx = msgs.findIndex((m) => m.id === assistantRef.current?.id);
+            const idx = msgs.findIndex((m) => m.id === updatedMsg.id);
             if (idx >= 0) {
-              msgs[idx] = assistantRef.current;
+              msgs[idx] = updatedMsg;
               store.updateThreadMessages(targetThreadId, msgs);
             }
           }
         }
         break;
+      }
 
-      case "answer":
-        assistantRef.current = {
-          ...assistantRef.current,
-          content: assistantRef.current.content + event.data,
+      case "answer": {
+        const updatedMsg: ThreadMessage = {
+          ...msg,
+          content: msg.content + event.data,
         };
+        currentAssistantRef.current = updatedMsg;
 
         // Mirror to store
         if (targetThreadId) {
           const thread = store.threads.find((t) => t.id === targetThreadId);
           if (thread) {
             const msgs = [...thread.messages];
-            const idx = msgs.findIndex((m) => m.id === assistantRef.current?.id);
+            const idx = msgs.findIndex((m) => m.id === updatedMsg.id);
             if (idx >= 0) {
-              msgs[idx] = assistantRef.current;
+              msgs[idx] = updatedMsg;
               store.updateThreadMessages(targetThreadId, msgs);
             }
           }
         }
         break;
+      }
 
-        case "tool_call": {
-          let parsed: { name: string; args: string };
-          try {
-            const obj = JSON.parse(event.data);
-            if (obj.name && obj.args) {
-              parsed = obj;
-            } else {
-              const match = event.data.match(/^([^(]+)\(([\s\S]*)\)$/);
-              parsed = match ? { name: match[1], args: match[2] } : { name: "unknown", args: event.data };
-            }
-          } catch {
-            const match = event.data.match(/^([^(]+)\(([\s\S]*)\)$/);
-            parsed = match ? { name: match[1], args: match[2] } : { name: "unknown", args: event.data };
-          }
+      case "tool_call": {
+        let parsed: { name?: string; args?: unknown; id?: string; index?: number };
+        try {
+          parsed = JSON.parse(event.data);
+        } catch {
+          // Fallback for non-JSON data
+          const match = event.data.match(/^([^(]+)\(([\s\S]*)\)$/);
+          parsed = match ? { name: match[1], args: match[2] } : { name: "unknown", args: event.data };
+        }
 
-        const newToolCall: ToolCall = {
-          id: crypto.randomUUID(),
-          name: parsed.name,
-          args: parsed.args,
-          expanded: false,
+        // Aggregate tool calls by index or id, using trackingKey for reconciliation
+        const toolCalls = [...(msg.toolCalls || [])];
+        const existingIdx = toolCalls.findIndex(
+          (tc) =>
+            (parsed.id && tc.id === parsed.id) ||
+            (parsed.id && tc.trackingKey === parsed.id) ||
+            (parsed.index !== undefined && tc.index === parsed.index)
+        );
+
+        if (existingIdx >= 0) {
+          // Update existing tool call
+          const tc = toolCalls[existingIdx];
+          toolCalls[existingIdx] = {
+            ...tc,
+            name: (parsed.name || tc.name || "unknown"),
+            args: (tc.args || "") + (typeof parsed.args === "string" ? parsed.args : JSON.stringify(parsed.args || "")),
+            id: parsed.id || tc.id,
+            index: parsed.index !== undefined ? parsed.index : tc.index,
+          };
+        } else {
+          // Create new tool call with tracking key
+          const syntheticId = crypto.randomUUID();
+          toolCalls.push({
+            id: parsed.id || syntheticId,
+            trackingKey: parsed.id || syntheticId,
+            index: parsed.index,
+            name: parsed.name || "unknown",
+            args: typeof parsed.args === "string" ? parsed.args : JSON.stringify(parsed.args || ""),
+            expanded: false,
+          });
+        }
+
+        const updatedMsg: ThreadMessage = {
+          ...msg,
+          toolCalls,
         };
-        assistantRef.current = {
-          ...assistantRef.current,
-          toolCalls: [...assistantRef.current.toolCalls, newToolCall],
-        };
+        currentAssistantRef.current = updatedMsg;
 
         // Mirror to store
         if (targetThreadId) {
           const thread = store.threads.find((t) => t.id === targetThreadId);
           if (thread) {
             const msgs = [...thread.messages];
-            const idx = msgs.findIndex((m) => m.id === assistantRef.current?.id);
+            const idx = msgs.findIndex((m) => m.id === updatedMsg.id);
             if (idx >= 0) {
-              msgs[idx] = assistantRef.current;
+              msgs[idx] = updatedMsg;
               store.updateThreadMessages(targetThreadId, msgs);
             }
           }
@@ -160,28 +190,41 @@ export default function Chat() {
       }
 
       case "tool_result": {
-        let content: string;
+        let resultData: { data: string; tool_call_id?: string } | string;
         try {
-          JSON.parse(event.data);
-          content = event.data;
+          resultData = JSON.parse(event.data);
         } catch {
-          content = event.data;
+          resultData = event.data;
         }
-        assistantRef.current = {
-          ...assistantRef.current,
-          toolCalls: assistantRef.current.toolCalls.map((tc) =>
-            tc.result ? tc : { ...tc, result: content },
-          ),
+
+        const content = typeof resultData === "string" ? resultData : resultData.data;
+        const toolCallId = typeof resultData === "object" ? resultData.tool_call_id : undefined;
+
+        let fallbackApplied = false;
+        const updatedMsg: ThreadMessage = {
+          ...msg,
+          toolCalls: (msg.toolCalls || []).map((tc) => {
+            // Match by ID if available, otherwise match the first one without a result
+            if (toolCallId && tc.id === toolCallId) {
+              return { ...tc, result: content };
+            }
+            if (!toolCallId && !tc.result && !fallbackApplied) {
+              fallbackApplied = true;
+              return { ...tc, result: content };
+            }
+            return tc;
+          }),
         };
+        currentAssistantRef.current = updatedMsg;
 
         // Mirror to store
         if (targetThreadId) {
           const thread = store.threads.find((t) => t.id === targetThreadId);
           if (thread) {
             const msgs = [...thread.messages];
-            const idx = msgs.findIndex((m) => m.id === assistantRef.current?.id);
+            const idx = msgs.findIndex((m) => m.id === updatedMsg.id);
             if (idx >= 0) {
-              msgs[idx] = assistantRef.current;
+              msgs[idx] = updatedMsg;
               store.updateThreadMessages(targetThreadId, msgs);
             }
           }
@@ -190,8 +233,8 @@ export default function Chat() {
       }
 
       case "done": {
-        if (assistantRef.current && targetThreadId) {
-          const finalized = { ...assistantRef.current, status: "done" as const };
+        if (targetThreadId) {
+          const finalized: ThreadMessage = { ...msg, status: "done" as const };
           const thread = store.threads.find((t) => t.id === targetThreadId);
           if (thread) {
             const msgs = [...thread.messages];
@@ -207,7 +250,7 @@ export default function Chat() {
               const firstUser = msgs.find((m) => m.role === "user");
               if (firstUser) {
                 const title = firstUser.content.slice(0, 40) + (firstUser.content.length > 40 ? "..." : "");
-                store.updateThreadTitle(activeThreadId, title);
+                store.updateThreadTitle(targetThreadId, title);
               }
             }
           }
@@ -218,16 +261,17 @@ export default function Chat() {
         break;
       }
     }
-  }, [storeRef]);
+  }, [storeRef, activeThreadId]);
 
   const stream = useSSEStream({
     onEvent: handleMessageEvent,
     onError: (err) => {
       const store = storeRef.current;
       const targetThreadId = streamingTargetThreadIdRef.current;
+      const assistantMsg = currentAssistantRef.current;
 
-      const errorMessage = currentAssistantRef.current
-        ? { ...currentAssistantRef.current, status: "done" as const, error: err }
+      const errorMessage: ThreadMessage = assistantMsg
+        ? { ...assistantMsg, status: "done" as const, error: err }
         : {
             id: crypto.randomUUID(),
             role: "assistant" as const,
@@ -284,14 +328,14 @@ export default function Chat() {
 
       currentAssistantRef.current = assistantMsg;
       isStreamingRef.current = true;
+      streamingTargetThreadIdRef.current = activeThreadId;
 
       const thread = store.threads.find((t) => t.id === activeThreadId);
       if (thread) {
         store.updateThreadMessages(activeThreadId, [...thread.messages, userMsg, assistantMsg]);
       }
 
-      streamingTargetThreadIdRef.current = targetThreadId;
-      stream.start({ message: text, thread_id: targetThreadId });
+      stream.start({ message: text, thread_id: activeThreadId });
     },
     [activeThreadId, stream, storeRef],
   );

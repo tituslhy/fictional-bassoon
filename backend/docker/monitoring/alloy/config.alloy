@@ -1,0 +1,33 @@
+local.file_match "docker_logs" {
+  path_targets = [{
+    __path__ = "/var/lib/docker/containers/*/*.log",
+  }]
+}
+
+discovery.relabel "container_name" {
+  targets = local.file_match.docker_logs.targets
+
+  rule {
+    source_labels = ["__path__"]
+    regex         = "/var/lib/docker/containers/([^/]+)/.*"
+    target_label  = "container_id"
+    replacement   = "$1"
+  }
+
+  rule {
+    source_labels = ["container_id"]
+    target_label  = "container_name"
+    replacement   = "$1"
+  }
+}
+
+loki.source.file "docker_logs" {
+  targets    = discovery.relabel.container_name.output
+  forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

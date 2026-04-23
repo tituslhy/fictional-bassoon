@@ -1,11 +1,9 @@
 "use client";
 
-import { createContext, useContext, useState, useCallback, useRef, useEffect } from "react";
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef, ReactNode } from "react";
 import type { Thread, ThreadMessage } from "@/types";
 
-const STORAGE_KEY = "fictional-bassoon-threads";
-
-interface ThreadStore {
+interface ThreadContextType {
   threads: Thread[];
   activeThreadId: string | null;
   setActiveThreadId: (id: string | null) => void;
@@ -16,36 +14,34 @@ interface ThreadStore {
   updateThreadMessages: (threadId: string, messages: ThreadMessage[]) => void;
 }
 
-const ThreadContext = createContext<ThreadStore | null>(null);
+const ThreadContext = createContext<ThreadContextType | undefined>(undefined);
 
-export function ThreadProvider({ children }: { children: React.ReactNode }) {
+const STORAGE_KEY = "fictional-bassoon-threads";
+
+export function ThreadProvider({ children }: { children: ReactNode }) {
   const [threads, setThreadsState] = useState<Thread[]>([]);
   const [activeThreadId, setActiveThreadIdState] = useState<string | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
 
-  // Load threads from localStorage on mount
+  // Load threads from localStorage on initial mount
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        setThreadsState(JSON.parse(raw));
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        setThreadsState(parsed);
+        if (parsed.length > 0) {
+          // Choose the thread with the latest updatedAt
+          const latest = parsed.reduce((prev: Thread, curr: Thread) =>
+            curr.updatedAt > prev.updatedAt ? curr : prev
+          );
+          setActiveThreadIdState(latest.id);
+        }
+      } catch (err) {
+        console.error("Failed to load threads:", err);
       }
-    } catch (e) {
-      console.error("Failed to load threads from storage", e);
     }
     setIsLoaded(true);
-  }, []);
-
-  // Load threads from localStorage on mount (client-only)
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        setThreadsState(JSON.parse(raw));
-      }
-    } catch {
-      // Ignore errors
-    }
   }, []);
 
   // Persist threads to localStorage whenever they change
@@ -97,7 +93,7 @@ export function ThreadProvider({ children }: { children: React.ReactNode }) {
         return next;
       });
     },
-    [persistThreads, activeThreadId],
+    [persistThreads, activeThreadId, setActiveThreadId],
   );
 
   const addMessage = useCallback(

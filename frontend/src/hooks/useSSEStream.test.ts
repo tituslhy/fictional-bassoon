@@ -77,7 +77,7 @@ describe("useSSEStream", () => {
       read: () => new Promise(() => {}),
       releaseLock: vi.fn(),
     };
-    const mockResponse = { body: { getReader: () => mockReader } };
+    const mockResponse = { ok: true, body: { getReader: () => mockReader } };
     global.fetch = vi.fn().mockResolvedValue(mockResponse);
 
     const { result } = renderHook(() => useSSEStream({ onEvent: vi.fn() }));

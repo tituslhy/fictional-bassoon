@@ -61,6 +61,11 @@ function ReasoningBlock({ content }: { content: string }) {
 function ToolCallBlock({ toolCall }: { toolCall: ToolCall }) {
   const [expanded, setExpanded] = useState(false);
 
+  // Safety: Ensure we don't try to render an object as a React child (fixes Error #31)
+  const name = typeof toolCall.name === "string" ? toolCall.name : JSON.stringify(toolCall.name);
+  const args = typeof toolCall.args === "string" ? toolCall.args : JSON.stringify(toolCall.args, null, 2);
+  const result = typeof toolCall.result === "string" ? toolCall.result : JSON.stringify(toolCall.result, null, 2);
+
   return (
     <div className="rounded-lg border border-[#262626] overflow-hidden">
       <button
@@ -68,7 +73,7 @@ function ToolCallBlock({ toolCall }: { toolCall: ToolCall }) {
         className="flex w-full items-center gap-2 px-3 py-2 bg-[#1a1a1a] hover:bg-[#222] transition-colors text-left"
       >
         <Code className="w-4 h-4 text-[#f59e0b]" />
-        <span className="text-sm text-[#e5e5e5] font-medium">{toolCall.name}</span>
+        <span className="text-sm text-[#e5e5e5] font-medium">{name}</span>
         <span className="ml-auto text-[#6b7280]">
           {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
         </span>
@@ -78,14 +83,14 @@ function ToolCallBlock({ toolCall }: { toolCall: ToolCall }) {
           <div className="px-4 py-2">
             <p className="text-xs text-[#6b7280] mb-1">Arguments</p>
             <pre className="text-xs text-[#9ca3af] font-mono whitespace-pre-wrap bg-[#0a0a0a] rounded border border-[#262626] px-3 py-2 max-h-40 overflow-auto">
-              {toolCall.args}
+              {args}
             </pre>
           </div>
-          {toolCall.result && (
+          {result && (
             <div className="px-4 py-2 border-t border-[#262626]">
               <p className="text-xs text-[#6b7280] mb-1">Result</p>
               <pre className="text-xs text-[#e5e5e5] font-mono whitespace-pre-wrap bg-[#0a0a0a] rounded border border-[#262626] px-3 py-2 max-h-40 overflow-auto">
-                {toolCall.result}
+                {result}
               </pre>
             </div>
           )}

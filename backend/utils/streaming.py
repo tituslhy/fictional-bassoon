@@ -2,6 +2,7 @@
 
 import json
 import logging
+import traceback
 from collections.abc import AsyncGenerator
 from langchain.messages import AIMessage, AIMessageChunk, AnyMessage, ToolMessage
 
@@ -52,7 +53,8 @@ async def stream_agent_events(agent, request) -> AsyncGenerator[dict, None]:
 
     except Exception as exc:
         logger.error("agent streaming error: %s", exc)
-        yield {"event": "error", "data": str(exc)}
+        logger.error(traceback.format_exc())
+        yield {"event": "error", "data": str(exc) or type(exc).__name__}
 
     finally:
         yield {"event": "done", "data": ""}
@@ -87,16 +89,31 @@ def _handle_completed_message(message: AnyMessage):
 
     if isinstance(message, AIMessage) and message.tool_calls:
         for tc in message.tool_calls:
-            payload = json.dumps({"name": tc["name"], "args": tc["args"]})
+            # Important: Ensure args is stringified if it's a dict
+            args = tc["args"]
+            if isinstance(args, dict):
+                args = json.dumps(args)
+            
+            payload = json.dumps({
+                "name": tc["name"],
+                "args": args,
+                "id": tc.get("id"),
+            })
             events.append({"event": "tool_call", "data": payload})
 
     if isinstance(message, ToolMessage):
-        content = (
-            message.content
-            if isinstance(message.content, str)
-            else json.dumps(message.content)
-        )
-        events.append({"event": "tool_result", "data": content})
+        content = message.content
+        if not isinstance(content, str):
+            content = json.dumps(content)
+
+        payload = json.dumps({
+            "data": content,
+            "tool_call_id": message.tool_call_id
+        })
+        events.append({
+            "event": "tool_result",
+            "data": payload
+        })
 
     return events
 
@@ -105,7 +122,10 @@ def _extract_tool_call_info(token: AIMessageChunk) -> list:
     """Build serializable tool call payloads from tool call chunk data."""
     parts = []
     for tc in token.tool_call_chunks:
-        name = tc.get("name", "")
-        args = tc.get("args", "")
-        parts.append({"name": name, "args": args})
+        parts.append({
+            "name": tc.get("name"),
+            "args": tc.get("args"),
+            "id": tc.get("id"),
+            "index": tc.get("index"),
+        })
     return parts

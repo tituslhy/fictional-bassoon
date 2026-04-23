@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom";
-import { vi } from "vitest";
+import { TextEncoder, TextDecoder } from "util";
 
 // Mock crypto.randomUUID with deterministic value
 const originalCrypto = global.crypto;
@@ -9,7 +9,8 @@ if (!global.crypto) {
   global.crypto = {} as Crypto;
 }
 
-global.crypto.randomUUID = () => "test-uuid-0000000";
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+global.crypto.randomUUID = () => "00000000-0000-0000-0000-000000000000" as any;
 
 // Restore original in teardown if needed
 if (typeof afterAll !== "undefined") {
@@ -23,9 +24,11 @@ if (typeof afterAll !== "undefined") {
 }
 
 // Mock TextEncoder and TextDecoder
-if (typeof TextEncoder === "undefined") {
-  global.TextEncoder = require("util").TextEncoder;
+if (typeof global.TextEncoder === "undefined") {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  global.TextEncoder = TextEncoder as any;
 }
-if (typeof TextDecoder === "undefined") {
-  global.TextDecoder = require("util").TextDecoder;
+if (typeof global.TextDecoder === "undefined") {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  global.TextDecoder = TextDecoder as any;
 }
