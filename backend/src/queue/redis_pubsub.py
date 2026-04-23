@@ -12,6 +12,9 @@ def get_redis_client():
     """Create a new Redis client for the current event loop."""
     return redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379"))
 
+# Global redis client for health checks and general use
+redis_client = get_redis_client()
+
 @asynccontextmanager
 async def get_redis_connection():
     """Context manager to get a Redis connection and ensure it is closed."""

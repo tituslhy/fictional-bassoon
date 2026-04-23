@@ -9,7 +9,8 @@ This project is a full-stack AI chat application that streams real-time agent re
 ## Architecture
 
 ```mermaid
-graph TD
+%%{init: {'flowchart': {'useMaxWidth': false, 'curve': 'basis'}}}%%
+graph LR
     subgraph Frontend [Next.js App]
         UI[Chat UI]
         SSE[useSSEStream Hook]

@@ -14,9 +14,6 @@
       "list_directory",
       "glob",
       "grep_search"
-    ],
-    "exclude": [
-      "run_shell_command(rm)"
     ]
   },
   "sandbox": "sandbox-exec"

@@ -6,6 +6,7 @@ export interface ChatRequest {
 
 export interface ToolCall {
   id: string;
+  trackingKey?: string;
   index?: number;
   name: string;
   args: string;
