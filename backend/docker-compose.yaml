@@ -1,19 +1,17 @@
 services:
   citus_coordinator:
-    image: citusdata/citus:14.0.0
+    image: citusdata/citus:13.0
     container_name: citus_coordinator
     platform: linux/amd64
     ports:
       - "5432:5432"
-    labels:
-      com.citusdata.role: Master
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_HOST_AUTH_METHOD: trust
     volumes:
-      - citus_coordinator_data:/var/lib/postgresql
+      - citus_coordinator_data:/var/lib/postgresql/data
       - ./docker/citus/init.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - app_network
@@ -24,17 +22,15 @@ services:
       retries: 5
 
   citus_worker_1:
-    image: citusdata/citus:14.0.0
+    image: citusdata/citus:13.0
     platform: linux/amd64
-    labels:
-      com.citusdata.role: Worker
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_HOST_AUTH_METHOD: trust
     volumes:
-      - citus_worker_1_data:/var/lib/postgresql
+      - citus_worker_1_data:/var/lib/postgresql/data
     networks:
       - app_network
     depends_on:
@@ -46,17 +42,15 @@ services:
       retries: 5
 
   citus_worker_2:
-    image: citusdata/citus:14.0.0
+    image: citusdata/citus:13.0
     platform: linux/amd64
-    labels:
-      com.citusdata.role: Worker
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_HOST_AUTH_METHOD: trust
     volumes:
-      - citus_worker_2_data:/var/lib/postgresql
+      - citus_worker_2_data:/var/lib/postgresql/data
     networks:
       - app_network
     depends_on:
@@ -66,20 +60,6 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
-
-  citus_manager:
-    container_name: citus_manager
-    image: citusdata/membership-manager:0.3.0
-    volumes:
-      - "/var/run/docker.sock:/var/run/docker.sock"
-    depends_on:
-      - citus_coordinator
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_HOST_AUTH_METHOD: trust
-    networks:
-      - app_network
 
   pgbouncer:
     image: edoburu/pgbouncer:latest
