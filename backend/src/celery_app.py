@@ -2,7 +2,6 @@
 
 import logging
 import os
-import threading
 from celery import Celery
 from celery.signals import worker_ready
 from prometheus_client import start_http_server

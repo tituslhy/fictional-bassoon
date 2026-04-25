@@ -4,7 +4,6 @@ Constructs the shared CompiledStateGraph lazily.
 """
 import os
 import logging
-import threading
 
 from deepagents import create_deep_agent
 from langchain.chat_models import init_chat_model

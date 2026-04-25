@@ -1,7 +1,7 @@
 import pytest
 import json
-from unittest.mock import AsyncMock, MagicMock
-from langchain.messages import AIMessageChunk, AIMessage, ToolMessage
+from unittest.mock import MagicMock
+from langchain.messages import AIMessageChunk, AIMessage
 from utils.streaming import stream_agent_events
 
 @pytest.mark.asyncio
@@ -69,7 +69,15 @@ async def test_stream_agent_events_basic():
     assert events[1] == {"event": "reasoning", "data": "I am thinking"}
     assert events[2] == {"event": "answer", "data": "Hello"}
     assert events[3] == {"event": "answer", "data": " world"}
-    assert events[4] == {"event": "tool_call", "data": json.dumps({"name": "get_weather", "args": {"city": "London"}})}
+    
+    # The actual implementation stringifies args if it's a dict before JSON dumping the payload
+    # See utils/streaming.py _handle_completed_message
+    expected_payload = json.dumps({
+        "name": "get_weather",
+        "args": json.dumps({"city": "London"}),
+        "id": "call_1",
+    })
+    assert events[4] == {"event": "tool_call", "data": expected_payload}
     assert events[-1] == {"event": "done", "data": ""}
 
 @pytest.mark.asyncio

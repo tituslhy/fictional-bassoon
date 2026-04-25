@@ -1,6 +1,6 @@
 import pytest
 import asyncio
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch, MagicMock, ANY
 from src.worker.worker_runner import run_agent_and_stream
 from src.worker.tasks import run_agent_task
 from src.models.chat_models import ChatRequest
@@ -21,15 +21,19 @@ async def test_run_agent_and_stream():
 
     with patch("src.worker.worker_runner.stream_agent_events", side_effect=mock_stream) as mock_stream_func, \
          patch("src.worker.worker_runner.publish_event", new_callable=AsyncMock) as mock_publish, \
-         patch("src.worker.worker_runner.get_agent") as mock_get_agent:
+         patch("src.worker.worker_runner.get_agent") as mock_get_agent, \
+         patch("src.worker.worker_runner.get_redis_connection") as mock_get_conn:
         
         mock_get_agent.return_value = MagicMock()
+        mock_redis = MagicMock()
+        mock_get_conn.return_value.__aenter__.return_value = mock_redis
         
         await run_agent_and_stream(request)
         
         assert mock_publish.call_count == 2
-        mock_publish.assert_any_call("j1", mock_events[0])
-        mock_publish.assert_any_call("j1", mock_events[1])
+        # Use ANY for the client argument as it's the mock_redis
+        mock_publish.assert_any_call("j1", mock_events[0], client=ANY)
+        mock_publish.assert_any_call("j1", mock_events[1], client=ANY)
 
 def test_run_agent_task():
     request_dict = {"message": "test", "thread_id": "t1", "job_id": "j1"}
