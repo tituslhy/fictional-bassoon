@@ -1,14 +1,18 @@
 services:
-  postgres:
-    image: postgres:16-alpine
+  citus_coordinator:
+    image: citusdata/citus:13.0
+    container_name: citus_coordinator
+    platform: linux/amd64
     ports:
       - "5432:5432"
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_HOST_AUTH_METHOD: trust
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - citus_coordinator_data:/var/lib/postgresql/data
+      - ./docker/citus/init.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - app_network
     healthcheck:
@@ -17,12 +21,108 @@ services:
       timeout: 3s
       retries: 5
 
-  postgres-exporter:
+  citus_worker_1:
+    image: citusdata/citus:13.0
+    platform: linux/amd64
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_HOST_AUTH_METHOD: trust
+    volumes:
+      - citus_worker_1_data:/var/lib/postgresql/data
+    networks:
+      - app_network
+    depends_on:
+      - citus_coordinator
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  citus_worker_2:
+    image: citusdata/citus:13.0
+    platform: linux/amd64
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_HOST_AUTH_METHOD: trust
+    volumes:
+      - citus_worker_2_data:/var/lib/postgresql/data
+    networks:
+      - app_network
+    depends_on:
+      - citus_coordinator
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    platform: linux/amd64
+    ports:
+      - "6432:6432"
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@citus_coordinator:5432/${POSTGRES_DB}
+      - LISTEN_ADDR=0.0.0.0
+      - LISTEN_PORT=6432
+      - AUTH_TYPE=trust
+      - POOL_MODE=transaction
+      - MAX_CLIENT_CONN=1000
+      - DEFAULT_POOL_SIZE=20
+      - ADMIN_USERS=${POSTGRES_USER}
+    depends_on:
+      citus_coordinator:
+        condition: service_healthy
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD", "pgbouncer", "--version"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Exporters
+  citus_coordinator_exporter:
     image: prometheuscommunity/postgres-exporter:latest
     environment:
-      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable"
+      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@citus_coordinator:5432/${POSTGRES_DB}?sslmode=disable"
     depends_on:
-      postgres:
+      citus_coordinator:
+        condition: service_healthy
+    networks:
+      - app_network
+
+  citus_worker_1_exporter:
+    image: prometheuscommunity/postgres-exporter:latest
+    environment:
+      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@citus_worker_1:5432/${POSTGRES_DB}?sslmode=disable"
+    depends_on:
+      citus_worker_1:
+        condition: service_healthy
+    networks:
+      - app_network
+
+  citus_worker_2_exporter:
+    image: prometheuscommunity/postgres-exporter:latest
+    environment:
+      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@citus_worker_2:5432/${POSTGRES_DB}?sslmode=disable"
+    depends_on:
+      citus_worker_2:
+        condition: service_healthy
+    networks:
+      - app_network
+
+  pgbouncer_exporter:
+    image: prometheuscommunity/pgbouncer-exporter:latest
+    environment:
+      PGBOUNCER_EXPORTER_CONNECTION_STRING: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@pgbouncer:6432/pgbouncer?sslmode=disable"
+    depends_on:
+      pgbouncer:
         condition: service_healthy
     networks:
       - app_network
@@ -90,18 +190,23 @@ services:
     env_file:
       - .env
     environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
       BROKER_URL: amqp://guest:guest@rabbitmq:5672//
       CELERY_RESULT_BACKEND: rpc://
       REDIS_URL: redis://redis:6379
-      DB_URI: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      DB_URI: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@pgbouncer:6432/${POSTGRES_DB}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       TAVILY_API_KEY: ${TAVILY_API_KEY}
     depends_on:
-      postgres:
+      citus_coordinator:
         condition: service_healthy
       redis:
         condition: service_healthy
       rabbitmq:
+        condition: service_healthy
+      pgbouncer:
         condition: service_healthy
     networks:
       - app_network
@@ -118,19 +223,24 @@ services:
     env_file:
       - .env
     environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
       BROKER_URL: amqp://guest:guest@rabbitmq:5672//
       CELERY_RESULT_BACKEND: rpc://
       REDIS_URL: redis://redis:6379
-      DB_URI: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      DB_URI: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@pgbouncer:6432/${POSTGRES_DB}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       TAVILY_API_KEY: ${TAVILY_API_KEY}
       METRICS_PORT: 8001
     depends_on:
-      postgres:
+      citus_coordinator:
         condition: service_healthy
       redis:
         condition: service_healthy
       rabbitmq:
+        condition: service_healthy
+      pgbouncer:
         condition: service_healthy
     networks:
       - app_network
@@ -162,7 +272,10 @@ services:
     depends_on:
       - backend
       - celery_worker
-      - postgres-exporter
+      - citus_coordinator_exporter
+      - citus_worker_1_exporter
+      - citus_worker_2_exporter
+      - pgbouncer_exporter
       - redis-exporter
     networks:
       - app_network
@@ -218,7 +331,9 @@ networks:
 volumes:
   redis_data:
   rabbitmq_data:
-  postgres_data:
+  citus_coordinator_data:
+  citus_worker_1_data:
+  citus_worker_2_data:
   logs:
   prometheus_data:
   grafana_data:

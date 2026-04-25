@@ -4,15 +4,22 @@ FastAPI SSE streaming backend for a LangGraph Deep Agent, paired with a Next.js 
 
 ## Overview
 
-This project is a full-stack AI chat application that streams real-time agent reasoning, tool calls, tool results, and final answers to the browser via Server-Sent Events (SSE). It features a robust, distributed architecture designed for observability and scalability.
+This project is a full-stack AI chat application that streams real-time agent reasoning, tool calls, tool results, and final answers to the browser via Server-Sent Events (SSE). It features a robust, distributed architecture designed for observability and scalability, consolidated behind an Nginx reverse proxy.
 
 ## Architecture
 
 ```mermaid
 %%{init: {'flowchart': {'useMaxWidth': false, 'curve': 'basis'}}}%%
 graph LR
-    subgraph Frontend [Next.js App]
+    subgraph Client [Browser]
         UI[Chat UI]
+    end
+
+    subgraph Proxy [Nginx]
+        NG[Reverse Proxy]
+    end
+
+    subgraph Frontend [Next.js App]
         SSE[useSSEStream Hook]
     end
 
@@ -22,10 +29,13 @@ graph LR
         Agent[LangGraph Agent]
     end
 
-    subgraph Infrastructure
+    subgraph Infrastructure [Distributed Data Layer]
         Broker[RabbitMQ Broker]
         PubSub[Redis Pub/Sub]
-        Checkpointer[PostgreSQL Checkpointer]
+        PgB[PgBouncer Pool]
+        CitusC[Citus Coordinator]
+        CW1[Citus Worker 1]
+        CW2[Citus Worker 2]
     end
 
     subgraph Monitoring
@@ -38,12 +48,21 @@ graph LR
     end
 
     %% Flow
-    UI -->|POST /chat| API
+    UI -->|port 80| NG
+    NG -->|/| UI
+    NG -->|/api| API
+    
     API -->|Subscribe| PubSub
     API -->|Enqueue Task| Broker
     Broker -->|Execute| Worker
     Worker -->|Run| Agent
-    Agent -->|Checkpoint| Checkpointer
+    
+    %% DB Flow
+    Agent -->|Checkpoint| PgB
+    PgB -->|Pool| CitusC
+    CitusC -->|Shard by thread_id| CW1
+    CitusC -->|Shard by thread_id| CW2
+    
     Agent -->|Publish Events| PubSub
     PubSub -->|SSE Stream| API
     API -->|Text/Event-Stream| SSE
@@ -52,7 +71,8 @@ graph LR
     %% Observability
     Worker -.->|Metrics| Prom
     API -.->|Metrics| Prom
-    PostgresExporter[Postgres Exporter] -.->|Metrics| Prom
+    PostgresExporter[Postgres Exporters] -.->|Metrics| Prom
+    PgBExporter[PgBouncer Exporter] -.->|Metrics| Prom
     RedisExporter[Redis Exporter] -.->|Metrics| Prom
     RabbitMQ -.->|Metrics| Prom
     
@@ -66,50 +86,52 @@ graph LR
 
 ```
 fictional-bassoon/
+├── docker/                     # Master Orchestration
+│   ├── docker-compose.yml      # Unified Stack Config
+│   └── nginx/                  # Reverse Proxy Config
 ├── backend/                    # FastAPI Backend
 │   ├── main.py                 # API Entry Point (/chat, /health)
-│   ├── src/
-│   │   ├── agent.py            # LangGraph Agent Construction
-│   │   ├── celery_app.py       # Celery & Metrics Server Config
-│   │   ├── models/             # Pydantic Schemas
-│   │   ├── queue/              # Redis Pub/Sub Helpers
-│   │   └── worker/             # Task Definitions & Runner
-│   ├── utils/                  # Streaming & SSE Utilities
-│   ├── docker/                 # Dockerfiles & Monitoring Config
-│   │   └── monitoring/         # Grafana, Prometheus, Loki, etc.
-│   ├── tests/                  # Backend Test Suite
-│   └── docker-compose.yaml     # Infrastructure & Monitoring Stack
-│
+│   ├── src/                    # Logic & Models
+│   ├── docker/                 # Monitoring & DB Config
+│   └── docker-compose.yaml     # Backend-specific Stack
 └── frontend/                   # Next.js Frontend
-    ├── src/
-    │   ├── app/                # App Router Pages & Styles
-    │   ├── components/         # Chat & Sidebar UI Components
-    │   ├── context/            # React State (ThreadContext)
-    │   ├── hooks/              # Custom Hooks (useSSEStream)
-    │   └── types/              # TypeScript Definitions
-    └── docker/                 # Frontend Dockerfile
+    ├── src/                    # UI & Logic
+    └── docker-compose.yaml     # Frontend-specific Stack
 ```
 
-## Quick Start
+## Quick Start (Unified Stack)
 
-### 1. Start Infrastructure & Monitoring
-Ensure Docker is running and start the core services:
+The easiest way to run the entire application is using the master Docker Compose:
+
+```bash
+cd docker
+docker compose up -d
+```
+
+This will start:
+- **Nginx:** Reverse proxy on [http://localhost](http://localhost)
+- **Frontend:** Next.js application (served via Nginx)
+- **Backend:** FastAPI server (served via Nginx at `/api`)
+- **Workers:** Celery workers for agent execution
+- **Data Layer:** Citus Cluster, PgBouncer, Redis, RabbitMQ
+- **Observability:** Full LGTM stack (Loki, Grafana, Tempo, Prometheus)
+
+## Local Development
+
+If you prefer to run components individually for faster iteration:
+
+### 1. Start Infrastructure
 ```bash
 cd backend
 docker compose up -d
 ```
-*This starts Postgres, Redis, RabbitMQ, and the full monitoring stack (Grafana, Prometheus, Loki, Tempo, Alloy).*
 
 ### 2. Backend Setup
 ```bash
 cd backend
 uv sync
 source .venv/bin/activate
-
-# Start Celery Worker (Required)
-celery -A src.celery_app worker --loglevel=info
-
-# Start FastAPI Server
+celery -A src.celery_app worker --loglevel=info &
 uvicorn main:app --reload
 ```
 
@@ -122,28 +144,25 @@ npm run dev
 
 ## Monitoring & Observability
 
-The project includes a comprehensive monitoring suite available out-of-the-box:
+Consolidated access through Nginx and direct ports:
 
-| Service | URL | Purpose |
-|---|---|---|
-| **FastAPI** | [http://localhost:8000](http://localhost:8000) | Backend API |
-| **Next.js** | [http://localhost:3000](http://localhost:3000) | Chat UI |
-| **Grafana** | [http://localhost:3001](http://localhost:3001) | Dashboards & Logs |
-| **Prometheus** | [http://localhost:9090](http://localhost:9090) | Metrics Scraper |
-| **Redis Insight** | [http://localhost:5540](http://localhost:5540) | Redis GUI |
-| **RabbitMQ Mgmt** | [http://localhost:15672](http://localhost:15672) | Broker Management |
-
-### Custom Dashboards
-- **FastAPI Metrics & Logs:** Real-time request rates, durations, and combined logs from Backend and Worker.
-- **Microservice Health:** High-level "Up/Down" status for all infrastructure components.
+| Service | Proxy URL | Direct URL | Purpose |
+|---|---|---|---|
+| **Chat UI** | [http://localhost](http://localhost) | [http://localhost:3000](http://localhost:3000) | Main Application |
+| **API Docs** | [http://localhost/api/docs](http://localhost/api/docs) | [http://localhost:8000/docs](http://localhost:8000/docs) | API Reference |
+| **Grafana** | - | [http://localhost:3001](http://localhost:3001) | Dashboards & Logs |
+| **Prometheus** | - | [http://localhost:9090](http://localhost:9090) | Metrics |
+| **Redis Insight** | - | [http://localhost:5540](http://localhost:5540) | Redis GUI |
+| **RabbitMQ Mgmt** | - | [http://localhost:15672](http://localhost:15672) | Broker Management |
 
 ## API Reference
 
-### POST /chat
-Starts a streaming agent session. Returns an SSE stream.
+### POST /api/chat
+Starts a streaming agent session via the proxy. Returns an SSE stream.
 **Event types:** `reasoning`, `tool_call`, `tool_result`, `answer`, `agent`, `error`, `done`.
 
 ## Technology Stack
-- **Backend:** FastAPI, LangGraph, Celery, Redis Pub/Sub, PostgreSQL.
-- **Frontend:** Next.js 14, TypeScript, Tailwind CSS, Lucide React.
-- **Observability:** LGTM Stack (Loki, Grafana, Tempo, Prometheus/Alloy).
+- **Backend:** FastAPI, LangGraph, Celery, Redis Pub/Sub, **Citus Cluster, PgBouncer**.
+- **Frontend:** Next.js 14, TypeScript, Tailwind CSS.
+- **Reverse Proxy:** Nginx.
+- **Observability:** LGTM Stack (Loki, Grafana, Tempo, Prometheus).
