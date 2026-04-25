@@ -1,5 +1,8 @@
 # Makefile to manage Docker services for fictional-bassoon
 
+COMPOSE_FILE = docker/docker-compose.yml
+DOCKER_COMPOSE = docker compose -f $(COMPOSE_FILE)
+
 .PHONY: help all test up up-build down build restart logs clean prune
 
 help:
@@ -22,34 +25,25 @@ test:
 	@exit 0
 
 up:
-	cd "backend" && docker compose up -d
-	cd "frontend" && docker compose up -d
+	$(DOCKER_COMPOSE) up -d
 
 up-build:
-	cd "backend" && docker compose up -d --build
-	cd "frontend" && docker compose up -d --build
+	$(DOCKER_COMPOSE) up -d --build
 
 down:
-	cd "backend" && docker compose down --remove-orphans
-	cd "frontend" && docker compose down --remove-orphans
+	$(DOCKER_COMPOSE) down --remove-orphans
 
 build:
-	cd "backend" && docker compose build
-	cd "frontend" && docker compose build
+	$(DOCKER_COMPOSE) build
 
 restart:
-	cd "backend" && docker compose restart
-	cd "frontend" && docker compose restart
+	$(DOCKER_COMPOSE) restart
 
 logs:
-	@echo "Streaming logs from backend and frontend services..."
-	@(cd "backend" && docker compose logs -f) & \
-	(cd "frontend" && docker compose logs -f) & \
-	wait
+	$(DOCKER_COMPOSE) logs -f
 
 clean:
-	cd "backend" && docker compose down -v --remove-orphans --rmi local
-	cd "frontend" && docker compose down -v --remove-orphans --rmi local
+	$(DOCKER_COMPOSE) down -v --remove-orphans --rmi local
 
 prune:
 	docker system prune -f
