@@ -86,6 +86,22 @@ services:
       timeout: 3s
       retries: 5
 
+  postgrest:
+    image: postgrest/postgrest:latest
+    ports:
+      - "3002:3000" # Avoid conflict with frontend on 3000
+    environment:
+      # Connect via PgBouncer for stability and pooling
+      PGRST_DB_URI: postgresql://authenticator:${PGRST_DB_PASS:-authenticator_password}@pgbouncer:6432/${POSTGRES_DB}
+      PGRST_DB_SCHEMA: api
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+    networks:
+      - app_network
+
   # Exporters
   citus_coordinator_exporter:
     image: prometheuscommunity/postgres-exporter:latest
@@ -199,6 +215,7 @@ services:
       DB_URI: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@pgbouncer:6432/${POSTGRES_DB}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       TAVILY_API_KEY: ${TAVILY_API_KEY}
+      JWT_SECRET: ${JWT_SECRET}
     depends_on:
       citus_coordinator:
         condition: service_healthy

@@ -1,7 +1,7 @@
 import pytest
 import json
 from httpx import AsyncClient, ASGITransport
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch
 from main import app
 
 @pytest.mark.asyncio

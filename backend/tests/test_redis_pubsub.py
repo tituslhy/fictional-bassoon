@@ -5,8 +5,10 @@ from src.queue.redis_pubsub import publish_event, subscribe
 
 @pytest.mark.asyncio
 async def test_publish_event():
-    with patch("src.queue.redis_pubsub.redis_client", new_callable=MagicMock) as mock_redis:
-        mock_redis.publish = AsyncMock()
+    mock_redis = AsyncMock()
+    # Mock the context manager
+    with patch("src.queue.redis_pubsub.get_redis_connection") as mock_get_conn:
+        mock_get_conn.return_value.__aenter__.return_value = mock_redis
         
         event = {"event": "test", "data": "info"}
         await publish_event("job1", event)
@@ -18,10 +20,12 @@ async def test_publish_event():
 
 @pytest.mark.asyncio
 async def test_subscribe():
-    with patch("src.queue.redis_pubsub.redis_client", new_callable=MagicMock) as mock_redis:
+    with patch("src.queue.redis_pubsub.get_redis_client") as mock_get_client:
+        mock_redis = MagicMock()
         mock_pubsub = MagicMock()
         mock_pubsub.subscribe = AsyncMock()
-        # redis_client.pubsub() is a sync call returning the pubsub object
+        
+        mock_get_client.return_value = mock_redis
         mock_redis.pubsub.return_value = mock_pubsub
         
         result = await subscribe("job1")

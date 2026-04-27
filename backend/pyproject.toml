@@ -27,6 +27,9 @@ dependencies = [
     "redis>=7.4.0",
     "tox>=4.53.0",
     "uvicorn[standard]>=0.44.0",
+    "ruff>=0.15.12",
+    "PyJWT>=2.10.1",
+    "passlib[bcrypt]>=1.7.4",
 ]
 
 [tool.pytest.ini_options]
