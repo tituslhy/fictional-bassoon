@@ -3,6 +3,7 @@
 import { useCallback, useRef } from "react";
 import { useThreadsContext } from "@/context/ThreadContext";
 import { useThreadStore } from "@/context/ThreadContext";
+import { useAuth } from "@/context/AuthContext";
 import { useSSEStream } from "@/hooks/useSSEStream";
 import type { SSEEvent, ThreadMessage } from "@/types";
 import MessageList from "./MessageList";
@@ -12,6 +13,7 @@ import Sidebar from "@/components/sidebar/Sidebar";
 export default function Chat() {
   const storeRef = useThreadStore();
   const { activeThreadId } = useThreadsContext();
+  const { token } = useAuth();
 
   // Use refs for streaming state to track the active message object
   const currentAssistantRef = useRef<ThreadMessage | null>(null);
@@ -265,9 +267,13 @@ export default function Chat() {
 
   const stream = useSSEStream({
     onEvent: handleMessageEvent,
+    token: token,
     onError: (err) => {
       const store = storeRef.current;
-      const targetThreadId = streamingTargetThreadIdRef.current;
+      const targetThreadId = window.location.pathname.split("/").pop(); // Or some other way to get the target thread ID reliably if not activeThreadId
+      // Actually streamingTargetThreadIdRef.current is the most reliable
+      const reliableTargetThreadId = streamingTargetThreadIdRef.current;
+      
       const assistantMsg = currentAssistantRef.current;
 
       const errorMessage: ThreadMessage = assistantMsg
@@ -285,8 +291,8 @@ export default function Chat() {
       currentAssistantRef.current = errorMessage;
 
       // Mirror to store
-      if (targetThreadId) {
-        const thread = store.threads.find((t) => t.id === targetThreadId);
+      if (reliableTargetThreadId) {
+        const thread = store.threads.find((t) => t.id === reliableTargetThreadId);
         if (thread) {
           const msgs = [...thread.messages];
           const idx = msgs.findIndex((m) => m.id === errorMessage.id);
@@ -295,7 +301,7 @@ export default function Chat() {
           } else {
             msgs.push(errorMessage);
           }
-          store.updateThreadMessages(targetThreadId, msgs);
+          store.updateThreadMessages(reliableTargetThreadId, msgs);
         }
       }
 
