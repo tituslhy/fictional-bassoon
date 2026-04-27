@@ -46,15 +46,17 @@ export function ThreadProvider({ children }: { children: ReactNode }) {
             id: t.id,
             title: t.title,
             updatedAt: new Date(t.updated_at).getTime(),
-            messages: (t.messages || []).map((m: any) => ({
-              id: m.id,
-              role: m.role,
-              content: m.content,
-              reasoning: m.reasoning,
-              toolCalls: m.tool_calls,
-              status: m.status,
-              error: m.error,
-            })).sort((a: any, b: any) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()),
+            messages: (t.messages || [])
+              .sort((a: any, b: any) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime())
+              .map((m: any) => ({
+                id: m.id,
+                role: m.role,
+                content: m.content,
+                reasoning: m.reasoning,
+                toolCalls: m.tool_calls,
+                status: m.status,
+                error: m.error,
+              })),
           }));
           setThreadsState(formatted);
           if (formatted.length > 0 && !activeThreadId) {
@@ -234,12 +236,6 @@ export function ThreadProvider({ children }: { children: ReactNode }) {
 
   const sortedThreads = [...threads].sort((a, b) => b.updatedAt - a.updatedAt);
 
-  if (!isLoaded) return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-950">
-      <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
-    </div>
-  );
-
   return (
     <ThreadContext.Provider
       value={{
@@ -254,6 +250,11 @@ export function ThreadProvider({ children }: { children: ReactNode }) {
       }}
     >
       {children}
+      {!isLoaded && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
+        </div>
+      )}
     </ThreadContext.Provider>
   );
 }
