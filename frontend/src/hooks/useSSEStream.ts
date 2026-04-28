@@ -7,6 +7,7 @@ interface UseSSEStreamOptions {
   onEvent: (event: SSEEvent) => void;
   onError?: (error: string) => void;
   onComplete?: () => void;
+  token?: string | null;
 }
 
 export function useSSEStream(options: UseSSEStreamOptions) {
@@ -24,9 +25,17 @@ export function useSSEStream(options: UseSSEStreamOptions) {
       abortRef.current = new AbortController();
       setIsStreaming(true);
 
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+
+      if (options.token) {
+        headers["Authorization"] = `Bearer ${options.token}`;
+      }
+
       fetch(`${API_BASE}/chat`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify(body),
         signal: abortRef.current.signal,
       })

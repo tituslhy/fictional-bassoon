@@ -182,8 +182,8 @@ Consolidated access through Nginx and direct ports:
 
 ## TODOs
 
-- [ ] **Frontend Authentication:** Implement Login/Signup pages using the new FastAPI `/auth` endpoints.
-- [ ] **JWT Integration:** Add `AuthContext` to manage tokens and inject them into PostgREST (`/api/db`) requests.
-- [ ] **Data Migration:** Move existing conversation state into PostgREST-managed tables for user visibility.
-- [ ] **Persistent Threads:** Fetch thread lists from PostgREST instead of local state.
+- [x] **Frontend Authentication:** Implement Login/Signup pages using the new FastAPI `/auth` endpoints.
+- [x] **JWT Integration:** Add `AuthContext` to manage tokens and inject them into PostgREST (`/api/db`) requests.
+- [x] **Data Migration:** Move existing conversation state into PostgREST-managed tables for user visibility.
+- [x] **Persistent Threads:** Fetch thread lists from PostgREST instead of local state.
 - [ ] **Test Coverage:** Improve test coverage to 90%

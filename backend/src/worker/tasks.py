@@ -1,50 +1,44 @@
+"""Celery tasks for the agent worker."""
+
 import asyncio
 import logging
-import threading
-from collections.abc import Coroutine
-from typing import Any
- 
+from typing import Any, Coroutine, Dict
+
 from src.celery_app import celery_app
 from src.models.chat_models import ChatRequest
 from src.worker.worker_runner import run_agent_and_stream
- 
+
 logger = logging.getLogger("backend")
 
 def _run_coroutine_sync(coro: Coroutine[Any, Any, None]) -> None:
     """Run an async coroutine from Celery's synchronous task context."""
     try:
         asyncio.get_running_loop()
-    except RuntimeError:
-        asyncio.run(coro)
-        return
-
-    error: BaseException | None = None
-
-    def runner() -> None:
-        nonlocal error
+        # If there is a loop, we create a new one to avoid conflict
+        # This is common in tests or specific worker setups
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
         try:
-            asyncio.run(coro)
-        except BaseException as exc:
-            error = exc
+            loop.run_until_complete(coro)
+        finally:
+            loop.close()
+    except RuntimeError:
+        # No running loop, safe to use asyncio.run
+        asyncio.run(coro)
 
-    thread = threading.Thread(target=runner, daemon=True)
-    thread.start()
-    thread.join()
-
-    if error is not None:
-        raise error
- 
- 
 @celery_app.task(name="run_agent_task", soft_time_limit=300, time_limit=360)
-def run_agent_task(request_dict: dict[str, Any]) -> None:
+def run_agent_task(request_dict: Dict[str, Any]) -> None:
     """Celery entry-point to run the async agent loop.
- 
+
     Args:
         request_dict: Dictionary to deserialize as ChatRequest.
- 
+
     Returns:
         None
-     """
-    request = ChatRequest(**request_dict)
-    logger.info("task received: job_id=%s thread_id=%s", request.job_id, request.thread_id)
-    _run_coroutine_sync(run_agent_and_stream(request))
+    """
+    logger.info("Task received: %s", request_dict)
+    try:
+        request = ChatRequest(**request_dict)
+        _run_coroutine_sync(run_agent_and_stream(request))
+    except Exception as e:
+        logger.error("Error running agent task: %s", e, exc_info=True)

@@ -67,7 +67,29 @@ CREATE TABLE IF NOT EXISTS api.users (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
--- 3. Create roles for PostgREST
+-- 3. Create threads table
+CREATE TABLE IF NOT EXISTS api.threads (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES api.users(id) ON DELETE CASCADE,
+  title TEXT DEFAULT 'New Thread',
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- 4. Create messages table
+CREATE TABLE IF NOT EXISTS api.messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  thread_id UUID NOT NULL REFERENCES api.threads(id) ON DELETE CASCADE,
+  role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+  content TEXT NOT NULL,
+  reasoning TEXT,
+  tool_calls JSONB DEFAULT '[]'::jsonb,
+  status TEXT DEFAULT 'done' CHECK (status IN ('streaming', 'done', 'error')),
+  error TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- 5. Create roles for PostgREST
 -- Use DO blocks to handle existing roles gracefully
 DO $$
 BEGIN
@@ -88,32 +110,59 @@ $$;
 GRANT anon TO authenticator;
 GRANT web_user TO authenticator;
 
--- 4. Permissions
+-- 6. Permissions
 -- Schema usage
 GRANT USAGE ON SCHEMA api TO anon;
 GRANT USAGE ON SCHEMA api TO web_user;
 
 -- Anonymous permissions (Signup)
 GRANT INSERT ON api.users TO anon;
--- We'll allow anon to select emails only to check for existence, or keep it strictly INSERT
 GRANT SELECT (id, email) ON api.users TO anon;
 
--- Web user permissions (own profile)
+-- Web user permissions
 GRANT SELECT, UPDATE ON api.users TO web_user;
+GRANT ALL ON api.threads TO web_user;
+GRANT ALL ON api.messages TO web_user;
 
 -- Enable Row Level Security
 ALTER TABLE api.users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE api.threads ENABLE ROW LEVEL SECURITY;
+ALTER TABLE api.messages ENABLE ROW LEVEL SECURITY;
 
 -- Anonymous can only signup (INSERT)
 CREATE POLICY anon_signup ON api.users FOR INSERT TO anon WITH CHECK (true);
+
 -- Users can only see and update their own data
--- PostgREST will set 'request.jwt.claims' which contains our custom 'user_id'
 CREATE POLICY user_self_manage ON api.users
   FOR ALL TO web_user
   USING (id = (current_setting('request.jwt.claims', true)::jsonb->>'user_id')::uuid)
   WITH CHECK (id = (current_setting('request.jwt.claims', true)::jsonb->>'user_id')::uuid);
 
--- 5. Helper to update 'updated_at'
+-- Threads RLS
+CREATE POLICY thread_access ON api.threads
+  FOR ALL TO web_user
+  USING (user_id = (current_setting('request.jwt.claims', true)::jsonb->>'user_id')::uuid)
+  WITH CHECK (user_id = (current_setting('request.jwt.claims', true)::jsonb->>'user_id')::uuid);
+
+-- Messages RLS (via thread ownership)
+CREATE POLICY message_access ON api.messages
+  FOR ALL TO web_user
+  USING (
+    EXISTS (
+      SELECT 1 FROM api.threads
+      WHERE api.threads.id = api.messages.thread_id
+      AND api.threads.user_id = (current_setting('request.jwt.claims', true)::jsonb->>'user_id')::uuid
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM api.threads
+      WHERE api.threads.id = api.messages.thread_id
+      AND api.threads.user_id = (current_setting('request.jwt.claims', true)::jsonb->>'user_id')::uuid
+    )
+  );
+
+-- 7. Helper to update 'updated_at'
 CREATE OR REPLACE FUNCTION api.update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -123,3 +172,4 @@ END;
 $$ language 'plpgsql';
 
 CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON api.users FOR EACH ROW EXECUTE PROCEDURE api.update_updated_at_column();
+CREATE TRIGGER update_threads_updated_at BEFORE UPDATE ON api.threads FOR EACH ROW EXECUTE PROCEDURE api.update_updated_at_column();
