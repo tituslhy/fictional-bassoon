@@ -9,8 +9,12 @@ This project is a showcase of distributed systems engineering applied to AI agen
 ## Architecture
 
 ```mermaid
-%%{init: {'flowchart': {'useMaxWidth': false, 'curve': 'basis', 'rankSpacing': 80, 'nodeSpacing': 40}}}%%
+%%{init: {'flowchart': {'useMaxWidth': false, 'curve': 'basis', 'rankSpacing': 120, 'nodeSpacing': 50}}}%%
 graph TB
+    SpacerTop[ ]
+    SpacerMid1[ ]
+    SpacerMid2[ ]
+    SpacerBottom[ ]
     classDef browser fill:#e8e8e8,stroke:#888,color:#222
     classDef frontend fill:#ede9fe,stroke:#7c3aed,color:#3b0764
     classDef backend fill:#d1fae5,stroke:#059669,color:#064e3b
@@ -87,6 +91,10 @@ graph TB
 
     %% 🔧 VERTICAL SPINE
     UI --> NG --> SSE --> API --> Broker --> Worker --> Agent --> PgB --> CitusC
+    SpacerTop --> UI
+    API --> SpacerMid1 --> Broker
+    Worker --> SpacerMid2 --> Agent
+    CitusC --> SpacerBottom
 
     %% FLOW
     UI -->|port 80| NG
@@ -133,6 +141,11 @@ graph TB
     Prom --> Grafana
     Loki --> Grafana
     Tempo --> Grafana
+
+    style SpacerTop fill:none,stroke:none
+    style SpacerMid1 fill:none,stroke:none
+    style SpacerMid2 fill:none,stroke:none
+    style SpacerBottom fill:none,stroke:none
 
     %% NODE COLORS
     class UI,NG browser
