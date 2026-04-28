@@ -2,18 +2,20 @@
 
 Constructs the shared CompiledStateGraph lazily.
 """
-import os
+
 import logging
+import os
 
 from deepagents import create_deep_agent
+from dotenv import find_dotenv, load_dotenv
 from langchain.chat_models import init_chat_model
 from langchain_tavily import TavilySearch
 from langgraph.graph.state import CompiledStateGraph
-from dotenv import load_dotenv, find_dotenv
 
 _ = load_dotenv(find_dotenv())
 
 logger = logging.getLogger("backend")
+
 
 def create_agent(checkpointer=None) -> CompiledStateGraph:
     """Create a new agent instance with the given checkpointer."""
@@ -23,6 +25,7 @@ def create_agent(checkpointer=None) -> CompiledStateGraph:
         tools=[TavilySearch(max_results=5)],
         checkpointer=checkpointer,
     )
+
 
 async def get_agent() -> CompiledStateGraph:
     """Return an agent instance, initializing a checkpointer if needed.
@@ -41,7 +44,9 @@ async def get_agent() -> CompiledStateGraph:
         from psycopg_pool import AsyncConnectionPool
     except ImportError as e:
         logger.error("Failed to import database dependencies: %s", e)
-        raise RuntimeError("Database dependencies (psycopg, libpq) are required to run the agent.") from e
+        raise RuntimeError(
+            "Database dependencies (psycopg, libpq) are required to run the agent."
+        ) from e
 
     # Get DB URI
     db_uri = os.getenv("DB_URI")
@@ -51,9 +56,7 @@ async def get_agent() -> CompiledStateGraph:
     # Initialize DB pool and checkpointer
     logger.info("Initializing Async Postgres checkpointer...")
     pool = AsyncConnectionPool(
-        conninfo=db_uri,
-        kwargs={"autocommit": True, "prepare_threshold": 0},
-        open=False
+        conninfo=db_uri, kwargs={"autocommit": True, "prepare_threshold": 0}, open=False
     )
     await pool.open()
     checkpointer = AsyncPostgresSaver(pool)

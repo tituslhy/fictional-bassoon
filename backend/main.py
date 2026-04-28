@@ -2,9 +2,9 @@
 
 import json
 import logging
-from pathlib import Path
-from logging.config import fileConfig
 from contextlib import asynccontextmanager
+from logging.config import fileConfig
+from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, status
@@ -12,18 +12,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 from prometheus_fastapi_instrumentator import Instrumentator
 
-from src.models.chat_models import ChatRequest, HealthResponse
-from src.models.auth_models import SignupRequest, LoginRequest, TokenResponse
-from src.queue.redis_pubsub import subscribe, redis_client
-from src.worker.tasks import run_agent_task
-from src.auth import hash_password, verify_password, create_access_token
-from src.db import get_db_pool, close_db_pool
+from src.auth import create_access_token, hash_password, verify_password
+from src.db import close_db_pool, get_db_pool
 from src.db_bootstrap import ensure_api_schema
+from src.models.auth_models import LoginRequest, SignupRequest, TokenResponse
+from src.models.chat_models import ChatRequest, HealthResponse
+from src.queue.redis_pubsub import redis_client, subscribe
+from src.worker.tasks import run_agent_task
 
 # Configure logging from INI file
 LOGGING_CONFIG_PATH = Path(__file__).parent / "logging.ini"
 fileConfig(LOGGING_CONFIG_PATH, disable_existing_loggers=False)
 logger = logging.getLogger("backend")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -33,6 +34,7 @@ async def lifespan(app: FastAPI):
     yield
     # Close pool on shutdown
     await close_db_pool()
+
 
 app = FastAPI(lifespan=lifespan)
 
@@ -57,19 +59,18 @@ async def signup(request: SignupRequest):
             await cur.execute("SELECT id FROM api.users WHERE email = %s", (request.email,))
             if await cur.fetchone():
                 raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Email already registered"
+                    status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered"
                 )
-            
+
             # Insert user
             hashed = hash_password(request.password)
             await cur.execute(
                 "INSERT INTO api.users (email, password_hash, full_name) VALUES (%s, %s, %s) RETURNING id",
-                (request.email, hashed, request.full_name)
+                (request.email, hashed, request.full_name),
             )
             user_row = await cur.fetchone()
-            user_id = str(user_row[0])
-            
+            user_id = str(user_row[0]) if user_row else ""
+
             # Return token immediately after signup
             token = create_access_token(data={"user_id": user_id, "email": request.email})
             return TokenResponse(access_token=token)
@@ -82,16 +83,14 @@ async def login(request: LoginRequest):
     async with pool.connection() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
-                "SELECT id, password_hash FROM api.users WHERE email = %s",
-                (request.email,)
+                "SELECT id, password_hash FROM api.users WHERE email = %s", (request.email,)
             )
             row = await cur.fetchone()
             if not row or not verify_password(request.password, row[1]):
                 raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid email or password"
+                    status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password"
                 )
-            
+
             user_id = str(row[0])
             token = create_access_token(data={"user_id": user_id, "email": request.email})
             return TokenResponse(access_token=token)
@@ -108,9 +107,11 @@ async def chat(request: ChatRequest):
     # Ensure job_id is present
     request = request.with_job_id()
     job_id = request.job_id
-    
+
     logger.info("received chat request for job_id=%s thread_id=%s", job_id, request.thread_id)
 
+    if not job_id:
+        raise ValueError("job_id is required")
     pubsub = await subscribe(job_id)
 
     try:
@@ -127,13 +128,13 @@ async def chat(request: ChatRequest):
                 continue
 
             event = json.loads(message["data"])
-            event_type = event.pop('event', 'message')
-            
+            event_type = event.pop("event", "message")
+
             # If there are extra fields (like tool_call_id), or if the event
             # is complex, we send the remaining event dict as a JSON string.
             # For simple events with just 'data', we send just the data string.
-            if len(event) == 1 and 'data' in event and isinstance(event['data'], str):
-                data_payload = event['data']
+            if len(event) == 1 and "data" in event and isinstance(event["data"], str):
+                data_payload = event["data"]
             else:
                 data_payload = json.dumps(event)
 

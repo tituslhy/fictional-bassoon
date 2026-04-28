@@ -4,8 +4,8 @@ services:
     container_name: clickhouse-01
     hostname: clickhouse-01
     ports:
-      - "127.0.0.1:18123:8123"
-      - "127.0.0.1:19000:9000"
+      - "18123:8123"
+      - "19000:9000"
     volumes:
       - ./docker/clickhouse/clickhouse-01/config.d/config.xml:/etc/clickhouse-server/config.d/config.xml:ro
       - ./docker/clickhouse/clickhouse-01/users.d/users.xml:/etc/clickhouse-server/users.d/users.xml:ro
@@ -23,8 +23,8 @@ services:
     container_name: clickhouse-02
     hostname: clickhouse-02
     ports:
-      - "127.0.0.1:18124:8123"
-      - "127.0.0.1:19001:9000"
+      - "18124:8123"
+      - "19001:9000"
     volumes:
       - ./docker/clickhouse/clickhouse-02/config.d/config.xml:/etc/clickhouse-server/config.d/config.xml:ro
       - ./docker/clickhouse/clickhouse-02/users.d/users.xml:/etc/clickhouse-server/users.d/users.xml:ro
@@ -42,8 +42,8 @@ services:
     container_name: clickhouse-03
     hostname: clickhouse-03
     ports:
-      - "127.0.0.1:18125:8123"
-      - "127.0.0.1:19002:9000"
+      - "18125:8123"
+      - "19002:9000"
     volumes:
       - ./docker/clickhouse/clickhouse-03/config.d/config.xml:/etc/clickhouse-server/config.d/config.xml:ro
       - ./docker/clickhouse/clickhouse-03/users.d/users.xml:/etc/clickhouse-server/users.d/users.xml:ro
@@ -61,7 +61,7 @@ services:
     container_name: clickhouse-keeper-01
     hostname: clickhouse-keeper-01
     ports:
-      - "127.0.0.1:9181:9181"
+      - "9181:9181"
     volumes:
       - ./docker/clickhouse/keeper-01/keeper_config.xml:/etc/clickhouse-keeper/keeper_config.xml:ro
       - clickhouse_keeper_01_data:/var/lib/clickhouse
@@ -74,7 +74,7 @@ services:
     container_name: clickhouse-keeper-02
     hostname: clickhouse-keeper-02
     ports:
-      - "127.0.0.1:9182:9181"
+      - "9182:9181"
     volumes:
       - ./docker/clickhouse/keeper-02/keeper_config.xml:/etc/clickhouse-keeper/keeper_config.xml:ro
       - clickhouse_keeper_02_data:/var/lib/clickhouse
@@ -87,7 +87,7 @@ services:
     container_name: clickhouse-keeper-03
     hostname: clickhouse-keeper-03
     ports:
-      - "127.0.0.1:9183:9181"
+      - "9183:9181"
     volumes:
       - ./docker/clickhouse/keeper-03/keeper_config.xml:/etc/clickhouse-keeper/keeper_config.xml:ro
       - clickhouse_keeper_03_data:/var/lib/clickhouse
@@ -605,7 +605,7 @@ services:
   grafana:
     image: grafana/grafana:latest
     ports:
-      - "127.0.0.1:3001:3000"
+      - "3001:3000"
     volumes:
       - ./docker/monitoring/grafana/provisioning:/etc/grafana/provisioning
       - grafana_data:/var/lib/grafana
@@ -622,7 +622,7 @@ services:
   alloy:
     image: grafana/alloy:latest
     ports:
-      - "127.0.0.1:12345:12345"
+      - "12345:12345"
     volumes:
       - ./docker/monitoring/alloy/config.alloy:/etc/alloy/config.alloy
       - /var/lib/docker/containers:/var/lib/docker/containers:ro

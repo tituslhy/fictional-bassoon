@@ -3,9 +3,10 @@
 import json
 import logging
 import os
-import redis.asyncio as redis
 from contextlib import asynccontextmanager
-from redis.asyncio.sentinel import Sentinel
+
+import redis.asyncio as redis  # type: ignore[import-untyped]
+from redis.asyncio.sentinel import Sentinel  # type: ignore[import-untyped]
 
 logger = logging.getLogger("backend")
 

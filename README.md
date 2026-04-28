@@ -160,28 +160,28 @@ graph LR
 
 ## Key Design Decisions
 
-- **SSE over WebSockets**  
+- **SSE over WebSockets**
   Simpler, more reliable streaming model for server → client updates. Leverages standard HTTP and provides automatic keep-alive support via FastAPI's `EventSourceResponse`.
 
-- **Celery + RabbitMQ for Orchestration**  
+- **Celery + RabbitMQ for Orchestration**
   Decouples the long-running agent reasoning process from the HTTP request lifecycle, ensuring the API remains responsive.
 
-- **PostgREST for Automated CRUD**  
+- **PostgREST for Automated CRUD**
   Exposes the Postgres database directly as a REST API for standard data operations (user profiles, message history), removing the need for boilerplate FastAPI CRUD endpoints.
 
-- **Redis Sentinel for High Availability**  
+- **Redis Sentinel for High Availability**
   Ensures resilient pub/sub event streaming and caching for distributed components.
 
-- **Dual PgBouncer Pools (Transaction + Session)**  
+- **Dual PgBouncer Pools (Transaction + Session)**
   Optimizes database connectivity by separating short-lived API queries from long-lived agent state connections.
 
-- **Citus for Horizontal Scaling**  
+- **Citus for Horizontal Scaling**
   Shards LangGraph agent state by `thread_id` across a multi-node cluster, ensuring the system can handle millions of concurrent conversations.
 
-- **Langfuse Observability & Clickhouse**  
+- **Langfuse Observability & Clickhouse**
   Provides deep tracing of agent trajectories, token usage analysis, and detailed execution logs for production debugging. Langfuse utilizes Redis/Valkey for asynchronous event queuing (via BullMQ), API key validation, and prompt caching.
 
-- **LGTM Stack for Infrastructure Monitoring**  
+- **LGTM Stack for Infrastructure Monitoring**
   Full integration of Loki (logs), Grafana (dashboards), Tempo (tracing), and Prometheus (metrics) across all distributed boundaries.
 
 ## Project Structure
@@ -213,6 +213,31 @@ docker compose up -d
 This will start the unified gateway on [http://localhost](http://localhost).
 
 ## Local Development
+
+### 0. Pre-commit Hooks Setup (First Time Only)
+
+This project uses [pre-commit](https://pre-commit.com/) to automatically run linters, formatters, and type checkers before commits.
+
+```bash
+# Install pre-commit framework
+uv pip install pre-commit
+
+# Install git hooks into your repository
+pre-commit install
+
+# Install frontend dependencies
+cd frontend && npm install && cd ..
+```
+
+After setup, hooks will run automatically on every `git commit`. To manually test:
+```bash
+pre-commit run --all-files
+```
+
+**Hooks configured:**
+- **Backend:** Ruff (linting), Mypy (type checking)
+- **Frontend:** ESLint, Prettier, TypeScript type checking, Vitest tests
+- **General:** YAML validation, file formatting checks
 
 ### 1. Start Infrastructure
 ```bash
