@@ -10,7 +10,7 @@ This project is a showcase of distributed systems engineering applied to AI agen
 
 ```mermaid
 %%{init: {'flowchart': {'useMaxWidth': false, 'curve': 'basis', 'rankSpacing': 120, 'nodeSpacing': 50}}}%%
-graph TB
+graph LR
     classDef browser fill:#e8e8e8,stroke:#888,color:#222
     classDef frontend fill:#ede9fe,stroke:#7c3aed,color:#3b0764
     classDef backend fill:#d1fae5,stroke:#059669,color:#064e3b
