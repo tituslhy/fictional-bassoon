@@ -19,6 +19,7 @@ graph TB
     classDef observability fill:#fef3c7,stroke:#d97706,color:#78350f
     classDef clickhouse fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
     classDef monitoring fill:#ede9fe,stroke:#7c3aed,color:#3b0764
+    classDef external fill:#f1f5f9,stroke:#64748b,color:#0f172a
 
     subgraph Client [Browser]
         UI[Chat UI]
@@ -36,6 +37,12 @@ graph TB
         Worker[Celery Worker]
         Agent[LangChain Deep Agent]
     end
+
+    %% 🔥 External Tool Layer (new)
+    subgraph Tools [External Tools]
+        Tavily[Tavily Search API 🔎]
+    end
+
     subgraph Observability [Langfuse Suite]
         Langfuse[Langfuse Web/Worker]
         Minio[Minio Object Store]
@@ -49,6 +56,7 @@ graph TB
             CKP3[Keeper 03]
         end
     end
+
     subgraph Persistence [Distributed Data Layer]
         Broker[RabbitMQ Broker]
         subgraph RedisCluster [Redis Sentinel Cluster]
@@ -68,6 +76,7 @@ graph TB
             CW2[Citus Worker 2]
         end
     end
+
     subgraph Monitoring [LGTM Stack]
         Alloy[Grafana Alloy]
         Loki[Loki Logs]
@@ -76,7 +85,7 @@ graph TB
         Grafana[Grafana Dashboards]
     end
 
-    %% 🔧 VERTICAL SPINE (layout control — do not remove)
+    %% 🔧 VERTICAL SPINE
     UI --> NG --> SSE --> API --> Broker --> Worker --> Agent --> PgB --> CitusC
 
     %% FLOW
@@ -89,6 +98,10 @@ graph TB
     API -->|Enqueue Task| Broker
     Broker -->|Execute| Worker
     Worker -->|Run| Agent
+
+    %% 🔥 Tavily tool usage (new)
+    Agent -.->|Tool Call| Tavily
+
     Agent -->|Checkpoint| PgB
     PGRST -->|CRUD| PgB
     AuthAPI -->|Users| PgB
@@ -106,7 +119,7 @@ graph TB
     CKP2 --- CKP3
     Langfuse --> LangfuseRedis
 
-    %% 🔥 YOUR NEW DOTTED EDGE
+    %% Shared infra hint
     LangfuseRedis -.->|Shared Redis Infra| RedisPrimary
 
     RedisPrimary --> RedisR1
@@ -130,12 +143,14 @@ graph TB
     class Langfuse,Minio,LangfuseRedis observability
     class CH01,CH02,CH03,CKP1,CKP2,CKP3 clickhouse
     class Alloy,Loki,Prom,Tempo,Grafana monitoring
+    class Tavily external
 
     %% ZONE COLORS
     style Client fill:#f3f4f6,stroke:#888
     style Proxy fill:#f3f4f6,stroke:#888
     style Frontend fill:#f5f3ff,stroke:#7c3aed
     style Backend fill:#ecfdf5,stroke:#059669
+    style Tools fill:#f8fafc,stroke:#64748b
     style Persistence fill:#eff6ff,stroke:#2563eb
     style Observability fill:#fffbeb,stroke:#d97706
     style ClickhouseCluster fill:#fef2f2,stroke:#dc2626
