@@ -4,7 +4,7 @@ High-performance, full-stack AI chat application designed to stream real-time ag
 
 ## Overview
 
-This project is a showcase of distributed systems engineering applied to AI agents. It streams real-time agent reasoning, tool calls, tool results, and final answers to the browser via **Server-Sent Events (SSE)**. The architecture offloads heavy "Deep Agent" workloads to asynchronous workers, utilizes a sharded database cluster for infinite state persistence, and provides complete observability across the entire stack.
+This project is a showcase of distributed systems engineering applied to AI agents. It streams real-time agent reasoning, tool calls, tool results, and final answers to the browser via **Server-Sent Events (SSE)**. The architecture offloads heavy "Deep Agent" workloads to asynchronous workers, utilizes a sharded database cluster for infinite state persistence, and provides complete observability and LLM tracing across the entire stack.
 
 ## Architecture
 
@@ -31,8 +31,15 @@ graph LR
         Agent[LangGraph Agent]
     end
 
+    subgraph Observability [Langfuse Suite]
+        Langfuse[Langfuse Web/Worker]
+        Minio[Minio Object Store]
+        Clickhouse[Clickhouse Cluster]
+    end
+
     subgraph Persistence [Distributed Data Layer]
         Broker[RabbitMQ Broker]
+        Redis[Redis Sentinel Cluster]
         PubSub[Redis Pub/Sub]
         PgB[PgBouncer Pool]
         PGRST[PostgREST /api/db]
@@ -47,7 +54,6 @@ graph LR
         Prom[Prometheus Metrics]
         Tempo[Tempo Traces]
         Grafana[Grafana Dashboards]
-        Insight[Redis Insight]
     end
 
     %% Flow
@@ -76,12 +82,12 @@ graph LR
     SSE -->|Update State| UI
 
     %% Observability
+    Agent -->|Trace| Langfuse
+    Langfuse -->|Store| Minio
+    Langfuse -->|Analytics| Clickhouse
+    
     Worker -.->|Metrics| Prom
     API -.->|Metrics| Prom
-    PostgresExporter[Postgres Exporters] -.->|Metrics| Prom
-    PgBExporter[PgBouncer Exporter] -.->|Metrics| Prom
-    RedisExporter[Redis Exporter] -.->|Metrics| Prom
-    RabbitMQ -.->|Metrics| Prom
     
     Alloy -.->|Scrape Logs| Loki
     Prom -.->|Alerts/Data| Grafana
@@ -100,8 +106,8 @@ graph LR
 - **PostgREST for Automated CRUD**  
   Exposes the Postgres database directly as a REST API for standard data operations (user profiles, message history), removing the need for boilerplate FastAPI CRUD endpoints.
 
-- **Redis Pub/Sub for Event Streaming**  
-  Acts as a high-performance bridge between distributed Celery workers and the SSE-enabled API gateway.
+- **Redis Sentinel for High Availability**  
+  Ensures resilient pub/sub event streaming and caching for distributed components.
 
 - **Dual PgBouncer Pools (Transaction + Session)**  
   Optimizes database connectivity by separating short-lived API queries from long-lived agent state connections.
@@ -109,10 +115,10 @@ graph LR
 - **Citus for Horizontal Scaling**  
   Shards LangGraph agent state by `thread_id` across a multi-node cluster, ensuring the system can handle millions of concurrent conversations.
 
-- **Nginx as Unified Gateway**  
-  Provides a single entry point for the frontend, the streaming API, and the PostgREST data layer, while optimizing for SSE performance.
+- **Langfuse Observability & Clickhouse**  
+  Provides deep tracing of agent trajectories, token usage analysis, and detailed execution logs for production debugging.
 
-- **LGTM Stack for Observability**  
+- **LGTM Stack for Infrastructure Monitoring**  
   Full integration of Loki (logs), Grafana (dashboards), Tempo (tracing), and Prometheus (metrics) across all distributed boundaries.
 
 ## Project Structure
@@ -125,7 +131,7 @@ fictional-bassoon/
 ├── backend/                    # FastAPI Backend
 │   ├── main.py                 # API Entry Point (/chat, /auth)
 │   ├── src/                    # Logic, Models, & Auth
-│   ├── docker/                 # Monitoring & Citus Config
+│   ├── docker/                 # Monitoring, Citus & Redis config
 │   └── docker-compose.yaml     # Backend-specific Stack
 └── frontend/                   # Next.js Frontend
     ├── src/                    # UI Components & Context
@@ -175,12 +181,8 @@ Consolidated access through Nginx and direct ports:
 |---|---|---|---|
 | **Chat UI** | [http://localhost](http://localhost) | [http://localhost:3000](http://localhost:3000) | Main Application |
 | **API Docs** | [http://localhost/api/docs](http://localhost/api/docs) | [http://localhost:8000/docs](http://localhost:8000/docs) | API Reference |
+| **Langfuse** | - | [http://localhost:3030](http://localhost:3030) | LLM Tracing & Observability |
 | **PostgREST** | [http://localhost/api/db](http://localhost/api/db) | [http://localhost:3002](http://localhost:3002) | Data Explorer |
 | **Grafana** | - | [http://localhost:3001](http://localhost:3001) | Dashboards & Logs |
 | **Prometheus** | - | [http://localhost:9090](http://localhost:9090) | Metrics |
 | **Redis Insight** | - | [http://localhost:5540](http://localhost:5540) | Redis GUI |
-
-## TODOs
-
-- [ ] spin up clickhouse cluster
-- [ ] langfuse open-source
