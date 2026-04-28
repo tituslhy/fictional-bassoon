@@ -67,7 +67,7 @@ async def test_run_agent_and_stream_closes_pool():
     
     # Mock stream_agent_events to be empty
     async def empty_stream(*args, **kwargs):
-        if False: yield {}
+        yield {}
 
     with patch("src.worker.worker_runner.get_agent", return_value=mock_agent), \
          patch("src.worker.worker_runner.get_redis_connection", return_value=mock_cm), \
