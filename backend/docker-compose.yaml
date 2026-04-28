@@ -1,4 +1,100 @@
 services:
+  clickhouse-01:
+    image: clickhouse/clickhouse-server:latest
+    container_name: clickhouse-01
+    hostname: clickhouse-01
+    ports:
+      - "18123:8123"
+      - "19000:9000"
+    volumes:
+      - ./docker/clickhouse/clickhouse-01/config.d/config.xml:/etc/clickhouse-server/config.d/config.xml:ro
+      - ./docker/clickhouse/clickhouse-01/users.d/users.xml:/etc/clickhouse-server/users.d/users.xml:ro
+      - clickhouse_01_data:/var/lib/clickhouse
+      - clickhouse_01_logs:/var/log/clickhouse-server
+    depends_on:
+      - clickhouse-keeper-01
+      - clickhouse-keeper-02
+      - clickhouse-keeper-03
+    networks:
+      - app_network
+
+  clickhouse-02:
+    image: clickhouse/clickhouse-server:latest
+    container_name: clickhouse-02
+    hostname: clickhouse-02
+    ports:
+      - "18124:8123"
+      - "19001:9000"
+    volumes:
+      - ./docker/clickhouse/clickhouse-02/config.d/config.xml:/etc/clickhouse-server/config.d/config.xml:ro
+      - ./docker/clickhouse/clickhouse-02/users.d/users.xml:/etc/clickhouse-server/users.d/users.xml:ro
+      - clickhouse_02_data:/var/lib/clickhouse
+      - clickhouse_02_logs:/var/log/clickhouse-server
+    depends_on:
+      - clickhouse-keeper-01
+      - clickhouse-keeper-02
+      - clickhouse-keeper-03
+    networks:
+      - app_network
+
+  clickhouse-03:
+    image: clickhouse/clickhouse-server:latest
+    container_name: clickhouse-03
+    hostname: clickhouse-03
+    ports:
+      - "18125:8123"
+      - "19002:9000"
+    volumes:
+      - ./docker/clickhouse/clickhouse-03/config.d/config.xml:/etc/clickhouse-server/config.d/config.xml:ro
+      - ./docker/clickhouse/clickhouse-03/users.d/users.xml:/etc/clickhouse-server/users.d/users.xml:ro
+      - clickhouse_03_data:/var/lib/clickhouse
+      - clickhouse_03_logs:/var/log/clickhouse-server
+    depends_on:
+      - clickhouse-keeper-01
+      - clickhouse-keeper-02
+      - clickhouse-keeper-03
+    networks:
+      - app_network
+
+  clickhouse-keeper-01:
+    image: clickhouse/clickhouse-keeper:latest-alpine
+    container_name: clickhouse-keeper-01
+    hostname: clickhouse-keeper-01
+    ports:
+      - "9181:9181"
+    volumes:
+      - ./docker/clickhouse/keeper-01/keeper_config.xml:/etc/clickhouse-keeper/keeper_config.xml:ro
+      - clickhouse_keeper_01_data:/var/lib/clickhouse
+      - clickhouse_keeper_01_logs:/var/log/clickhouse-keeper
+    networks:
+      - app_network
+
+  clickhouse-keeper-02:
+    image: clickhouse/clickhouse-keeper:latest-alpine
+    container_name: clickhouse-keeper-02
+    hostname: clickhouse-keeper-02
+    ports:
+      - "9182:9181"
+    volumes:
+      - ./docker/clickhouse/keeper-02/keeper_config.xml:/etc/clickhouse-keeper/keeper_config.xml:ro
+      - clickhouse_keeper_02_data:/var/lib/clickhouse
+      - clickhouse_keeper_02_logs:/var/log/clickhouse-keeper
+    networks:
+      - app_network
+
+  clickhouse-keeper-03:
+    image: clickhouse/clickhouse-keeper:latest-alpine
+    container_name: clickhouse-keeper-03
+    hostname: clickhouse-keeper-03
+    ports:
+      - "9183:9181"
+    volumes:
+      - ./docker/clickhouse/keeper-03/keeper_config.xml:/etc/clickhouse-keeper/keeper_config.xml:ro
+      - clickhouse_keeper_03_data:/var/lib/clickhouse
+      - clickhouse_keeper_03_logs:/var/log/clickhouse-keeper
+    networks:
+      - app_network
+
   citus_coordinator:
     image: citusdata/citus:13.0
     container_name: citus_coordinator
@@ -157,12 +253,201 @@ services:
       timeout: 3s
       retries: 5
 
+  app-redis-primary:
+    image: redis:7-alpine
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    ports:
+      - "16380:6379"
+    volumes:
+      - ./docker/redis/app-primary/redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - app_redis_primary_data:/data
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  app-redis-replica-1:
+    image: redis:7-alpine
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    ports:
+      - "16381:6379"
+    volumes:
+      - ./docker/redis/app-replica/redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - app_redis_replica_1_data:/data
+    depends_on:
+      app-redis-primary:
+        condition: service_healthy
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  app-redis-replica-2:
+    image: redis:7-alpine
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    ports:
+      - "16382:6379"
+    volumes:
+      - ./docker/redis/app-replica/redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - app_redis_replica_2_data:/data
+    depends_on:
+      app-redis-primary:
+        condition: service_healthy
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  app-redis-sentinel-1:
+    image: redis:7-alpine
+    command:
+      - /bin/sh
+      - -c
+      - cp /etc/redis/sentinel.conf /tmp/sentinel.conf && exec redis-server /tmp/sentinel.conf --sentinel
+    ports:
+      - "36379:26379"
+    volumes:
+      - ./docker/redis/sentinel/sentinel.conf:/etc/redis/sentinel.conf:ro
+    depends_on:
+      app-redis-primary:
+        condition: service_healthy
+      app-redis-replica-1:
+        condition: service_healthy
+      app-redis-replica-2:
+        condition: service_healthy
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "26379", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  app-redis-sentinel-2:
+    image: redis:7-alpine
+    command:
+      - /bin/sh
+      - -c
+      - cp /etc/redis/sentinel.conf /tmp/sentinel.conf && exec redis-server /tmp/sentinel.conf --sentinel
+    ports:
+      - "36380:26379"
+    volumes:
+      - ./docker/redis/sentinel/sentinel.conf:/etc/redis/sentinel.conf:ro
+    depends_on:
+      app-redis-primary:
+        condition: service_healthy
+      app-redis-replica-1:
+        condition: service_healthy
+      app-redis-replica-2:
+        condition: service_healthy
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "26379", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  app-redis-sentinel-3:
+    image: redis:7-alpine
+    command:
+      - /bin/sh
+      - -c
+      - cp /etc/redis/sentinel.conf /tmp/sentinel.conf && exec redis-server /tmp/sentinel.conf --sentinel
+    ports:
+      - "36381:26379"
+    volumes:
+      - ./docker/redis/sentinel/sentinel.conf:/etc/redis/sentinel.conf:ro
+    depends_on:
+      app-redis-primary:
+        condition: service_healthy
+      app-redis-replica-1:
+        condition: service_healthy
+      app-redis-replica-2:
+        condition: service_healthy
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "26379", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   redis-exporter:
     image: oliver006/redis_exporter:latest
     environment:
       - REDIS_ADDR=redis:6379
     depends_on:
       - redis
+    networks:
+      - app_network
+
+  app-redis-primary-exporter:
+    image: oliver006/redis_exporter:latest
+    environment:
+      - REDIS_ADDR=app-redis-primary:6379
+    depends_on:
+      app-redis-primary:
+        condition: service_healthy
+    networks:
+      - app_network
+
+  app-redis-replica-1-exporter:
+    image: oliver006/redis_exporter:latest
+    environment:
+      - REDIS_ADDR=app-redis-replica-1:6379
+    depends_on:
+      app-redis-replica-1:
+        condition: service_healthy
+    networks:
+      - app_network
+
+  app-redis-replica-2-exporter:
+    image: oliver006/redis_exporter:latest
+    environment:
+      - REDIS_ADDR=app-redis-replica-2:6379
+    depends_on:
+      app-redis-replica-2:
+        condition: service_healthy
+    networks:
+      - app_network
+
+  app-redis-sentinel-1-exporter:
+    image: oliver006/redis_exporter:latest
+    environment:
+      - REDIS_ADDR=redis://app-redis-sentinel-1:26379
+    depends_on:
+      app-redis-sentinel-1:
+        condition: service_healthy
+    networks:
+      - app_network
+
+  app-redis-sentinel-2-exporter:
+    image: oliver006/redis_exporter:latest
+    environment:
+      - REDIS_ADDR=redis://app-redis-sentinel-2:26379
+    depends_on:
+      app-redis-sentinel-2:
+        condition: service_healthy
+    networks:
+      - app_network
+
+  app-redis-sentinel-3-exporter:
+    image: oliver006/redis_exporter:latest
+    environment:
+      - REDIS_ADDR=redis://app-redis-sentinel-3:26379
+    depends_on:
+      app-redis-sentinel-3:
+        condition: service_healthy
     networks:
       - app_network
 
@@ -294,6 +579,12 @@ services:
       - citus_worker_2_exporter
       - pgbouncer_exporter
       - redis-exporter
+      - app-redis-primary-exporter
+      - app-redis-replica-1-exporter
+      - app-redis-replica-2-exporter
+      - app-redis-sentinel-1-exporter
+      - app-redis-sentinel-2-exporter
+      - app-redis-sentinel-3-exporter
     networks:
       - app_network
 
@@ -314,7 +605,7 @@ services:
   grafana:
     image: grafana/grafana:latest
     ports:
-      - "127.0.0.1:3001:3000"
+      - "3001:3000"
     volumes:
       - ./docker/monitoring/grafana/provisioning:/etc/grafana/provisioning
       - grafana_data:/var/lib/grafana
@@ -331,11 +622,11 @@ services:
   alloy:
     image: grafana/alloy:latest
     ports:
-      - "127.0.0.1:12345:12345"
+      - "12345:12345"
     volumes:
       - ./docker/monitoring/alloy/config.alloy:/etc/alloy/config.alloy
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
-    command: run --storage.path=/var/lib/alloy/data --server.http.listen-addr=127.0.0.1:12345 /etc/alloy/config.alloy
+    command: run --storage.path=/var/lib/alloy/data --server.http.listen-addr=0.0.0.0:12345 /etc/alloy/config.alloy
     depends_on:
       - loki
     networks:
@@ -346,6 +637,21 @@ networks:
     driver: bridge
 
 volumes:
+  app_redis_primary_data:
+  app_redis_replica_1_data:
+  app_redis_replica_2_data:
+  clickhouse_01_data:
+  clickhouse_01_logs:
+  clickhouse_02_data:
+  clickhouse_02_logs:
+  clickhouse_03_data:
+  clickhouse_03_logs:
+  clickhouse_keeper_01_data:
+  clickhouse_keeper_01_logs:
+  clickhouse_keeper_02_data:
+  clickhouse_keeper_02_logs:
+  clickhouse_keeper_03_data:
+  clickhouse_keeper_03_logs:
   redis_data:
   rabbitmq_data:
   citus_coordinator_data:

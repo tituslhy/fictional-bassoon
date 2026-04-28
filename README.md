@@ -4,115 +4,184 @@ High-performance, full-stack AI chat application designed to stream real-time ag
 
 ## Overview
 
-This project is a showcase of distributed systems engineering applied to AI agents. It streams real-time agent reasoning, tool calls, tool results, and final answers to the browser via **Server-Sent Events (SSE)**. The architecture offloads heavy "Deep Agent" workloads to asynchronous workers, utilizes a sharded database cluster for infinite state persistence, and provides complete observability across the entire stack.
+This project is a showcase of distributed systems engineering applied to AI agents. It streams real-time agent reasoning, tool calls, tool results, and final answers to the browser via **Server-Sent Events (SSE)**. The architecture offloads heavy "Deep Agent" workloads to asynchronous workers, utilizes a sharded database cluster for infinite state persistence, and provides complete observability and LLM tracing across the entire stack.
 
 ## Architecture
 
 ```mermaid
-%%{init: {'flowchart': {'useMaxWidth': false, 'curve': 'basis'}}}%%
+%%{init: {'flowchart': {'useMaxWidth': false, 'curve': 'basis', 'rankSpacing': 120, 'nodeSpacing': 50}}}%%
 graph LR
+    classDef browser fill:#e8e8e8,stroke:#888,color:#222
+    classDef frontend fill:#ede9fe,stroke:#7c3aed,color:#3b0764
+    classDef backend fill:#d1fae5,stroke:#059669,color:#064e3b
+    classDef postgres fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
+    classDef redis fill:#dcfce7,stroke:#16a34a,color:#14532d
+    classDef observability fill:#fef3c7,stroke:#d97706,color:#78350f
+    classDef clickhouse fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
+    classDef monitoring fill:#ede9fe,stroke:#7c3aed,color:#3b0764
+    classDef external fill:#f1f5f9,stroke:#64748b,color:#0f172a
+
     subgraph Client [Browser]
         UI[Chat UI]
     end
-
     subgraph Proxy [Nginx]
         NG[Reverse Proxy]
     end
-
     subgraph Frontend [Next.js App]
         SSE[useSSEStream Hook]
         Auth[Auth Logic]
     end
-
     subgraph Backend [FastAPI & Workers]
         API[FastAPI /chat]
         AuthAPI[FastAPI /auth]
         Worker[Celery Worker]
-        Agent[LangGraph Agent]
+        Agent[LangChain Deep Agent]
+    end
+
+    %% 🔥 External Tool Layer (new)
+    subgraph Tools [External Tools]
+        Tavily[Tavily Search API 🔎]
+    end
+
+    subgraph Observability [Langfuse Suite]
+        Langfuse[Langfuse Web/Worker]
+        Minio[Minio Object Store]
+        LangfuseRedis[Langfuse Redis Cache/Queue]
+        subgraph ClickhouseCluster [ClickHouse Cluster]
+            CH01[CH-01 Node]
+            CH02[CH-02 Node]
+            CH03[CH-03 Node]
+            CKP1[Keeper 01]
+            CKP2[Keeper 02]
+            CKP3[Keeper 03]
+        end
     end
 
     subgraph Persistence [Distributed Data Layer]
         Broker[RabbitMQ Broker]
+        subgraph RedisCluster [Redis Sentinel Cluster]
+            RedisPrimary[App Redis Primary]
+            RedisR1[Replica 1]
+            RedisR2[Replica 2]
+            Sentinel1[Sentinel 1]
+            Sentinel2[Sentinel 2]
+            Sentinel3[Sentinel 3]
+        end
         PubSub[Redis Pub/Sub]
-        PgB[PgBouncer Pool]
-        PGRST[PostgREST /api/db]
-        CitusC[Citus Coordinator]
-        CW1[Citus Worker 1]
-        CW2[Citus Worker 2]
+        subgraph PostgresCluster [Postgres Cluster]
+            PgB[PgBouncer Pool]
+            PGRST[PostgREST /api/db]
+            CitusC[Citus Coordinator]
+            CW1[Citus Worker 1]
+            CW2[Citus Worker 2]
+        end
     end
 
-    subgraph Monitoring
+    subgraph Monitoring [LGTM Stack]
         Alloy[Grafana Alloy]
         Loki[Loki Logs]
         Prom[Prometheus Metrics]
         Tempo[Tempo Traces]
         Grafana[Grafana Dashboards]
-        Insight[Redis Insight]
     end
 
-    %% Flow
+    %% 🔧 VERTICAL SPINE
+    UI --> NG --> SSE --> API --> Worker --> Agent --> PgB
+
+    %% FLOW
     UI -->|port 80| NG
-    NG -->|/| UI
+    NG --> SSE
     NG -->|/api/auth| AuthAPI
     NG -->|/api/chat| API
     NG -->|/api/db| PGRST
-    
     API -->|Subscribe| PubSub
     API -->|Enqueue Task| Broker
     Broker -->|Execute| Worker
     Worker -->|Run| Agent
-    
-    %% DB Flow
+
+    %% 🔥 Tavily tool usage (new)
+    Agent -.->|Tool Call| Tavily
+
     Agent -->|Checkpoint| PgB
     PGRST -->|CRUD| PgB
     AuthAPI -->|Users| PgB
-    PgB -->|Pool| CitusC
-    CitusC -->|Shard by thread_id| CW1
-    CitusC -->|Shard by thread_id| CW2
-    
+    PgB --> CitusC
+    CitusC --> CW1
+    CitusC --> CW2
     Agent -->|Publish Events| PubSub
     PubSub -->|SSE Stream| API
-    API -->|Text/Event-Stream| SSE
-    SSE -->|Update State| UI
+    Agent -->|Trace| Langfuse
+    Langfuse --> Minio
+    Langfuse --> CH01
+    CH01 --- CH02
+    CH02 --- CH03
+    CKP1 --- CKP2
+    CKP2 --- CKP3
+    Langfuse --> LangfuseRedis
 
-    %% Observability
+    %% Shared infra hint
+    LangfuseRedis -.->|Shared Redis Infra| RedisPrimary
+
+    RedisPrimary --> RedisR1
+    RedisPrimary --> RedisR2
+    Sentinel1 --- Sentinel2
+    Sentinel2 --- Sentinel3
+
     Worker -.->|Metrics| Prom
     API -.->|Metrics| Prom
-    PostgresExporter[Postgres Exporters] -.->|Metrics| Prom
-    PgBExporter[PgBouncer Exporter] -.->|Metrics| Prom
-    RedisExporter[Redis Exporter] -.->|Metrics| Prom
-    RabbitMQ -.->|Metrics| Prom
-    
-    Alloy -.->|Scrape Logs| Loki
-    Prom -.->|Alerts/Data| Grafana
-    Loki -.->|Logs| Grafana
-    Tempo -.->|Traces| Grafana
+    Alloy -.->|Logs| Loki
+    Prom --> Grafana
+    Loki --> Grafana
+    Tempo --> Grafana
+
+
+    %% NODE COLORS
+    class UI,NG browser
+    class SSE,Auth frontend
+    class API,AuthAPI,Worker,Agent backend
+    class PgB,PGRST,CitusC,CW1,CW2 postgres
+    class RedisPrimary,RedisR1,RedisR2,Sentinel1,Sentinel2,Sentinel3,PubSub redis
+    class Langfuse,Minio,LangfuseRedis observability
+    class CH01,CH02,CH03,CKP1,CKP2,CKP3 clickhouse
+    class Alloy,Loki,Prom,Tempo,Grafana monitoring
+    class Tavily external
+
+    %% ZONE COLORS
+    style Client fill:#f3f4f6,stroke:#888
+    style Proxy fill:#f3f4f6,stroke:#888
+    style Frontend fill:#f5f3ff,stroke:#7c3aed
+    style Backend fill:#ecfdf5,stroke:#059669
+    style Tools fill:#f8fafc,stroke:#64748b
+    style Persistence fill:#eff6ff,stroke:#2563eb
+    style Observability fill:#fffbeb,stroke:#d97706
+    style ClickhouseCluster fill:#fef2f2,stroke:#dc2626
+    style Monitoring fill:#f5f3ff,stroke:#7c3aed
 ```
 
 ## Key Design Decisions
 
-- **SSE over WebSockets**  
+- **SSE over WebSockets**
   Simpler, more reliable streaming model for server → client updates. Leverages standard HTTP and provides automatic keep-alive support via FastAPI's `EventSourceResponse`.
 
-- **Celery + RabbitMQ for Orchestration**  
+- **Celery + RabbitMQ for Orchestration**
   Decouples the long-running agent reasoning process from the HTTP request lifecycle, ensuring the API remains responsive.
 
-- **PostgREST for Automated CRUD**  
+- **PostgREST for Automated CRUD**
   Exposes the Postgres database directly as a REST API for standard data operations (user profiles, message history), removing the need for boilerplate FastAPI CRUD endpoints.
 
-- **Redis Pub/Sub for Event Streaming**  
-  Acts as a high-performance bridge between distributed Celery workers and the SSE-enabled API gateway.
+- **Redis Sentinel for High Availability**
+  Ensures resilient pub/sub event streaming and caching for distributed components.
 
-- **Dual PgBouncer Pools (Transaction + Session)**  
+- **Dual PgBouncer Pools (Transaction + Session)**
   Optimizes database connectivity by separating short-lived API queries from long-lived agent state connections.
 
-- **Citus for Horizontal Scaling**  
+- **Citus for Horizontal Scaling**
   Shards LangGraph agent state by `thread_id` across a multi-node cluster, ensuring the system can handle millions of concurrent conversations.
 
-- **Nginx as Unified Gateway**  
-  Provides a single entry point for the frontend, the streaming API, and the PostgREST data layer, while optimizing for SSE performance.
+- **Langfuse Observability & Clickhouse**
+  Provides deep tracing of agent trajectories, token usage analysis, and detailed execution logs for production debugging. Langfuse utilizes Redis/Valkey for asynchronous event queuing (via BullMQ), API key validation, and prompt caching.
 
-- **LGTM Stack for Observability**  
+- **LGTM Stack for Infrastructure Monitoring**
   Full integration of Loki (logs), Grafana (dashboards), Tempo (tracing), and Prometheus (metrics) across all distributed boundaries.
 
 ## Project Structure
@@ -125,7 +194,7 @@ fictional-bassoon/
 ├── backend/                    # FastAPI Backend
 │   ├── main.py                 # API Entry Point (/chat, /auth)
 │   ├── src/                    # Logic, Models, & Auth
-│   ├── docker/                 # Monitoring & Citus Config
+│   ├── docker/                 # Monitoring, Citus & Redis config
 │   └── docker-compose.yaml     # Backend-specific Stack
 └── frontend/                   # Next.js Frontend
     ├── src/                    # UI Components & Context
@@ -144,6 +213,31 @@ docker compose up -d
 This will start the unified gateway on [http://localhost](http://localhost).
 
 ## Local Development
+
+### 0. Pre-commit Hooks Setup (First Time Only)
+
+This project uses [pre-commit](https://pre-commit.com/) to automatically run linters, formatters, and type checkers before commits.
+
+```bash
+# Install pre-commit framework
+uv pip install pre-commit
+
+# Install git hooks into your repository
+pre-commit install
+
+# Install frontend dependencies
+cd frontend && npm install && cd ..
+```
+
+After setup, hooks will run automatically on every `git commit`. To manually test:
+```bash
+pre-commit run --all-files
+```
+
+**Hooks configured:**
+- **Backend:** Ruff (linting), Mypy (type checking)
+- **Frontend:** ESLint, Prettier, TypeScript type checking, Vitest tests
+- **General:** YAML validation, file formatting checks
 
 ### 1. Start Infrastructure
 ```bash
@@ -175,15 +269,11 @@ Consolidated access through Nginx and direct ports:
 |---|---|---|---|
 | **Chat UI** | [http://localhost](http://localhost) | [http://localhost:3000](http://localhost:3000) | Main Application |
 | **API Docs** | [http://localhost/api/docs](http://localhost/api/docs) | [http://localhost:8000/docs](http://localhost:8000/docs) | API Reference |
+| **Langfuse** | - | [http://localhost:3030](http://localhost:3030) | LLM Tracing & Observability |
 | **PostgREST** | [http://localhost/api/db](http://localhost/api/db) | [http://localhost:3002](http://localhost:3002) | Data Explorer |
 | **Grafana** | - | [http://localhost:3001](http://localhost:3001) | Dashboards & Logs |
 | **Prometheus** | - | [http://localhost:9090](http://localhost:9090) | Metrics |
 | **Redis Insight** | - | [http://localhost:5540](http://localhost:5540) | Redis GUI |
 
-## TODOs
-
-- [x] **Frontend Authentication:** Implement Login/Signup pages using the new FastAPI `/auth` endpoints.
-- [x] **JWT Integration:** Add `AuthContext` to manage tokens and inject them into PostgREST (`/api/db`) requests.
-- [x] **Data Migration:** Move existing conversation state into PostgREST-managed tables for user visibility.
-- [x] **Persistent Threads:** Fetch thread lists from PostgREST instead of local state.
-- [x] **Test Coverage:** Improve test coverage to 90%
+## TODOS
+- Add minio and LangFuse to complete self-hosting LLM observability platform

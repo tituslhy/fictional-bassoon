@@ -4,6 +4,7 @@ import json
 import logging
 import traceback
 from collections.abc import AsyncGenerator
+
 from langchain.messages import AIMessage, AIMessageChunk, AnyMessage, ToolMessage
 
 logger = logging.getLogger("backend")
@@ -75,10 +76,12 @@ def _handle_message_chunk(token: AIMessageChunk):
 
     if token.tool_call_chunks:
         for payload in _extract_tool_call_info(token):
-            events.append({
-                "event": "tool_call",
-                "data": json.dumps(payload),
-            })
+            events.append(
+                {
+                    "event": "tool_call",
+                    "data": json.dumps(payload),
+                }
+            )
 
     return events
 
@@ -90,15 +93,17 @@ def _handle_completed_message(message: AnyMessage):
     if isinstance(message, AIMessage) and message.tool_calls:
         for tc in message.tool_calls:
             # Important: Ensure args is stringified if it's a dict
-            args = tc["args"]
+            args: str | dict = tc["args"]
             if isinstance(args, dict):
                 args = json.dumps(args)
-            
-            payload = json.dumps({
-                "name": tc["name"],
-                "args": args,
-                "id": tc.get("id"),
-            })
+
+            payload = json.dumps(
+                {
+                    "name": tc["name"],
+                    "args": args,
+                    "id": tc.get("id"),
+                }
+            )
             events.append({"event": "tool_call", "data": payload})
 
     if isinstance(message, ToolMessage):
@@ -106,14 +111,8 @@ def _handle_completed_message(message: AnyMessage):
         if not isinstance(content, str):
             content = json.dumps(content)
 
-        payload = json.dumps({
-            "data": content,
-            "tool_call_id": message.tool_call_id
-        })
-        events.append({
-            "event": "tool_result",
-            "data": payload
-        })
+        payload = json.dumps({"data": content, "tool_call_id": message.tool_call_id})
+        events.append({"event": "tool_result", "data": payload})
 
     return events
 
@@ -122,10 +121,12 @@ def _extract_tool_call_info(token: AIMessageChunk) -> list:
     """Build serializable tool call payloads from tool call chunk data."""
     parts = []
     for tc in token.tool_call_chunks:
-        parts.append({
-            "name": tc.get("name"),
-            "args": tc.get("args"),
-            "id": tc.get("id"),
-            "index": tc.get("index"),
-        })
+        parts.append(
+            {
+                "name": tc.get("name"),
+                "args": tc.get("args"),
+                "id": tc.get("id"),
+                "index": tc.get("index"),
+            }
+        )
     return parts

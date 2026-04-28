@@ -2,6 +2,7 @@
 
 import logging
 import os
+
 from celery import Celery
 from celery.signals import worker_ready
 from prometheus_client import start_http_server
@@ -15,6 +16,7 @@ celery_app = Celery(
 )
 
 celery_app.conf.imports = ("src.worker.tasks",)
+
 
 @worker_ready.connect
 def start_metrics_server(sender, **kwargs):
@@ -33,4 +35,9 @@ def start_metrics_server(sender, **kwargs):
     except Exception as e:
         logger.error("Failed to start metrics server: %s", e)
 
-logger.info("celery app configured: broker=%s backend=%s", celery_app.conf.broker_url, celery_app.conf.result_backend)
+
+logger.info(
+    "celery app configured: broker=%s backend=%s",
+    celery_app.conf.broker_url,
+    celery_app.conf.result_backend,
+)

@@ -26,9 +26,27 @@ scrape_configs:
     static_configs:
       - targets: ['redis-exporter:9121']
 
+  - job_name: 'app_redis_ha'
+    static_configs:
+      - targets:
+          - 'app-redis-primary-exporter:9121'
+          - 'app-redis-replica-1-exporter:9121'
+          - 'app-redis-replica-2-exporter:9121'
+
+  - job_name: 'app_redis_sentinel'
+    static_configs:
+      - targets:
+          - 'app-redis-sentinel-1-exporter:9121'
+          - 'app-redis-sentinel-2-exporter:9121'
+          - 'app-redis-sentinel-3-exporter:9121'
+
   - job_name: 'rabbitmq'
     static_configs:
       - targets: ['rabbitmq:15692']
+
+  - job_name: 'clickhouse'
+    static_configs:
+      - targets: ['clickhouse-01:9363', 'clickhouse-02:9363', 'clickhouse-03:9363']
 
   - job_name: 'grafana'
     static_configs:
