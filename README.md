@@ -186,4 +186,4 @@ Consolidated access through Nginx and direct ports:
 - [x] **JWT Integration:** Add `AuthContext` to manage tokens and inject them into PostgREST (`/api/db`) requests.
 - [x] **Data Migration:** Move existing conversation state into PostgREST-managed tables for user visibility.
 - [x] **Persistent Threads:** Fetch thread lists from PostgREST instead of local state.
-- [ ] **Test Coverage:** Improve test coverage to 90%
+- [x] **Test Coverage:** Improve test coverage to 90%
