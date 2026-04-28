@@ -11,45 +11,64 @@ This project is a showcase of distributed systems engineering applied to AI agen
 ```mermaid
 %%{init: {'flowchart': {'useMaxWidth': false, 'curve': 'basis'}}}%%
 graph LR
+    classDef browser fill:#e8e8e8,stroke:#888,color:#222
+    classDef frontend fill:#ede9fe,stroke:#7c3aed,color:#3b0764
+    classDef backend fill:#d1fae5,stroke:#059669,color:#064e3b
+    classDef postgres fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
+    classDef redis fill:#dcfce7,stroke:#16a34a,color:#14532d
+    classDef observability fill:#fef3c7,stroke:#d97706,color:#78350f
+    classDef clickhouse fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
+    classDef monitoring fill:#ede9fe,stroke:#7c3aed,color:#3b0764
+
     subgraph Client [Browser]
         UI[Chat UI]
     end
-
     subgraph Proxy [Nginx]
         NG[Reverse Proxy]
     end
-
     subgraph Frontend [Next.js App]
         SSE[useSSEStream Hook]
         Auth[Auth Logic]
     end
-
     subgraph Backend [FastAPI & Workers]
         API[FastAPI /chat]
         AuthAPI[FastAPI /auth]
         Worker[Celery Worker]
         Agent[LangGraph Agent]
     end
-
     subgraph Observability [Langfuse Suite]
         Langfuse[Langfuse Web/Worker]
         Minio[Minio Object Store]
-        Clickhouse[Clickhouse Cluster]
         LangfuseRedis[Langfuse Redis Cache/Queue]
+        subgraph ClickhouseCluster [ClickHouse Cluster]
+            CH01[CH-01 Node]
+            CH02[CH-02 Node]
+            CH03[CH-03 Node]
+            CKP1[Keeper 01]
+            CKP2[Keeper 02]
+            CKP3[Keeper 03]
+        end
     end
-
     subgraph Persistence [Distributed Data Layer]
         Broker[RabbitMQ Broker]
-        Redis[Redis Sentinel Cluster]
+        subgraph RedisCluster [Redis Sentinel Cluster]
+            RedisPrimary[App Redis Primary]
+            RedisR1[Replica 1]
+            RedisR2[Replica 2]
+            Sentinel1[Sentinel 1]
+            Sentinel2[Sentinel 2]
+            Sentinel3[Sentinel 3]
+        end
         PubSub[Redis Pub/Sub]
-        PgB[PgBouncer Pool]
-        PGRST[PostgREST /api/db]
-        CitusC[Citus Coordinator]
-        CW1[Citus Worker 1]
-        CW2[Citus Worker 2]
+        subgraph PostgresCluster [Postgres Cluster]
+            PgB[PgBouncer Pool]
+            PGRST[PostgREST /api/db]
+            CitusC[Citus Coordinator]
+            CW1[Citus Worker 1]
+            CW2[Citus Worker 2]
+        end
     end
-
-    subgraph Monitoring
+    subgraph Monitoring [LGTM Stack]
         Alloy[Grafana Alloy]
         Loki[Loki Logs]
         Prom[Prometheus Metrics]
@@ -57,48 +76,50 @@ graph LR
         Grafana[Grafana Dashboards]
     end
 
-    %% Flow
     UI -->|port 80| NG
-    NG -->|/| UI
+    NG --> SSE
     NG -->|/api/auth| AuthAPI
     NG -->|/api/chat| API
     NG -->|/api/db| PGRST
-    
     API -->|Subscribe| PubSub
     API -->|Enqueue Task| Broker
     Broker -->|Execute| Worker
     Worker -->|Run| Agent
-    
-    %% DB Flow
     Agent -->|Checkpoint| PgB
     PGRST -->|CRUD| PgB
     AuthAPI -->|Users| PgB
-    PgB -->|Pool| CitusC
-    CitusC -->|Shard by thread_id| CW1
-    CitusC -->|Shard by thread_id| CW2
-    
+    PgB --> CitusC
+    CitusC --> CW1
+    CitusC --> CW2
     Agent -->|Publish Events| PubSub
     PubSub -->|SSE Stream| API
-    API -->|Text/Event-Stream| SSE
-    SSE -->|Update State| UI
-
-    %% Observability
     Agent -->|Trace| Langfuse
-    Langfuse -->|Store| Minio
-    Langfuse -->|Analytics| Clickhouse
-    Langfuse -->|Queue/Cache| LangfuseRedis
-    
-    %% Monitoring/Metrics
+    Langfuse --> Minio
+    Langfuse --> CH01
+    CH01 --- CH02
+    CH02 --- CH03
+    CKP1 --- CKP2
+    CKP2 --- CKP3
+    Langfuse --> LangfuseRedis
+    RedisPrimary --> RedisR1
+    RedisPrimary --> RedisR2
+    Sentinel1 --- Sentinel2
+    Sentinel2 --- Sentinel3
     Worker -.->|Metrics| Prom
     API -.->|Metrics| Prom
-    Redis -.->|Metrics| Prom
-    Clickhouse -.->|Metrics| Prom
-    LangfuseRedis -.->|Metrics| Prom
-    
-    Alloy -.->|Scrape Logs| Loki
-    Prom -.->|Alerts/Data| Grafana
-    Loki -.->|Logs| Grafana
-    Tempo -.->|Traces| Grafana
+    Alloy -.->|Logs| Loki
+    Prom --> Grafana
+    Loki --> Grafana
+    Tempo --> Grafana
+
+    class UI,NG browser
+    class SSE,Auth frontend
+    class API,AuthAPI,Worker,Agent backend
+    class PgB,PGRST,CitusC,CW1,CW2 postgres
+    class RedisPrimary,RedisR1,RedisR2,Sentinel1,Sentinel2,Sentinel3,PubSub redis
+    class Langfuse,Minio,LangfuseRedis observability
+    class CH01,CH02,CH03,CKP1,CKP2,CKP3 clickhouse
+    class Alloy,Loki,Prom,Tempo,Grafana monitoring
 ```
 
 ## Key Design Decisions
