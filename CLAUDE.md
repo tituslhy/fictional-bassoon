@@ -1,28 +1,27 @@
-# fictional-bassoon
+# CLAUDE.md
 
-FastAPI SSE streaming backend for a LangGraph Deep Agent, paired with a Next.js chat frontend.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Streams reasoning, tool calls, tool results, and final answer as Server-Sent Events (SSE).
-Celery + Redis pub/sub bridges the async worker to the FastAPI response.
+## Project
 
-## What this is NOT
-- Not a monolith — never consolidate logic into one file
-- Frontend is already developed in `frontend/`
+FastAPI SSE streaming backend for a LangGraph Deep Agent, paired with a Next.js chat frontend. Streams reasoning, tool calls, tool results, and final answer as Server-Sent Events (SSE). Celery + Redis pub/sub bridges the async worker to the FastAPI response.
 
 ## Structure
-- main.py — FastAPI app entry point, /chat and /health endpoints only (~90 lines)
-- src/ — all application modules
-  - agent.py — LangGraph agent construction (module-level variable, no factory wrappers)
-  - celery_app.py — Celery config (broker, backend)
-  - models/chat_models.py — Pydantic request/response models (ChatRequest)
-  - queue/redis_pubsub.py — publish_event() and subscribe() helpers for Redis pub/sub bridge
-  - worker/tasks.py — Celery task definition, bridges sync Celery context to async
-  - worker/worker_runner.py — async agent execution, iterates agent.astream() and publishes to Redis
-- utils/streaming.py — LangGraph event conversion to typed SSE dicts
-- docker/ — Docker config (Dockerfile, .env.example)
-- docker-compose.yaml — compose file
-- notebooks/test_stream.ipynb — development notebook for testing streaming
-- frontend/ — Next.js chat application
+
+- `main.py` — FastAPI app entry point (~170 lines): `/chat`, `/auth/signup`, `/auth/login`, `/health`
+- `src/agent.py` — LangGraph agent construction via `create_agent()` / `get_agent()` factory functions
+- `src/auth.py` — JWT token creation, password hashing (pbkdf2_sha256 + bcrypt fallback)
+- `src/db.py` — Global AsyncConnectionPool singleton (FastAPI lifespan)
+- `src/db_bootstrap.py` — Ensures `api` schema exists on startup
+- `utils/streaming.py` — LangGraph event conversion to typed SSE dicts
+- `src/models/chat_models.py` — Pydantic request/response models
+- `src/models/auth_models.py` — Auth-specific Pydantic models
+- `src/celery_app.py` — Celery config (broker, backend)
+- `src/worker/tasks.py` — Celery task definition, bridges sync→async
+- `src/worker/worker_runner.py` — async agent execution, publishes to Redis
+- `src/queue/redis_pubsub.py` — `publish_event()` and `subscribe()` helpers
+- `docker/` — Docker compose (unified stack), nginx config
+- `frontend/` — Next.js chat app
 
 ## Request flow
 
@@ -37,23 +36,10 @@ POST /chat
 ```
 Celery worker:
   → run_agent_task (sync entry) → run_agent_and_stream() (async)
+  → get_agent() → creates fresh AsyncConnectionPool + AsyncPostgresSaver per task
   → agent.astream() → stream_agent_events() (convert LangGraph events to SSE dicts)
   → publish_event() → Redis pub/sub "stream:{job_id}"
 ```
-
-## File responsibilities
-
-- main.py — FastAPI app, /chat and /health only, stays thin
-- src/agent.py — agent construction as module-level variable, no wrapper functions
-- src/streaming.py — LangGraph event conversion to typed SSE dicts
-- src/models/chat_models.py — Pydantic models only
-- src/celery_app.py — Celery config only
-- src/tasks.py — Celery task, bridges sync→async
-- src/worker_runner.py — async agent execution, publishes to Redis
-- src/redis_pubsub.py — publish_event() and subscribe() helpers only
-- frontend/src/hooks/useSSEStream.ts — SSE consumption hook
-- frontend/src/components/chat/ — chat UI components
-- frontend/src/context/ThreadContext.tsx — thread state management
 
 ## Dev Commands
 
@@ -68,65 +54,61 @@ celery -A src.celery_app worker --loglevel=info  # required for streaming
 cd frontend
 npm install                                     # install deps
 npm run dev                                     # dev server (port 3000)
+npm run test                                    # run vitest
+npm run test:ui                                 # vitest with UI
+npm run lint                                    # eslint
+npm run build                                   # production build
+
+# Tests
+cd backend
+uv run pytest                                   # run all tests
+uv run pytest tests/test_streaming.py            # single test file
+uv run pytest tests/test_streaming.py::test_name # single test
+uv run pytest --cov=src                          # with coverage
+uv run tox                                       # run across Python versions
+
+# Docker (unified stack)
+cd docker
+docker compose up -d
+
+# Docker (backend infra only)
+cd backend
+docker compose up -d
 ```
-
-## Prerequisites
-
-### Services
-- RabbitMQ on localhost:5672 (Celery broker)
-- Redis on localhost:6379 (pub/sub bridge)
-- PostgreSQL (for LangGraph checkpointer / session state)
-
-### Environment variables (backend `.env`)
-- `BROKER_URL` — RabbitMQ connection string (default: `amqp://guest:guest@localhost:5672//`)
-- `CELERY_RESULT_BACKEND` — Celery result backend (default: `rpc://`)
-- `REDIS_URL` — Redis connection string (default: `redis://localhost:6379`)
-- `DB_URI` — PostgreSQL connection string (required for checkpointer)
-- OpenAI API key (for LLM)
-
-### Environment variables (frontend `.env.local`)
-- `NEXT_PUBLIC_API_URL` — Backend URL (default: `http://localhost:8000`)
-
-## Code Standards
-- Google-style docstrings on all functions and classes
-- Comments explain WHY not WHAT — never comment self-evident code
-- Pydantic models for all request/response shapes
-
-## Rules
-See .claude/rules/ for detailed standards:
-- streaming-patterns.md — LangGraph streaming API contract (read this first)
-- architecture.md — file responsibilities and what lives where
-- frontend.md - frontend guidelines
 
 ## Streaming Patterns
 
 ### Non-negotiable API contract
-- stream_mode=["messages", "updates"]
-- version="v2"
-- subgraphs=True
-- Reasoning content lives in content_blocks — NEVER in additional_kwargs
-- additional_kwargs must never be used for reasoning content
+- `stream_mode=["messages", "updates"]`
+- `version="v2"`
+- `subgraphs=True`
+- Reasoning content lives in `content_blocks` — NEVER in `additional_kwargs`
 
-### Event types emitted by streaming.py
+### Event types emitted by utils/streaming.py
 - **reasoning** — thinking tokens (from content_blocks)
-- **tool_call** — tool invocation (from AIMessageChunk or completed messages)
+- **tool_call** — tool invocation
 - **tool_result** — tool response
 - **answer** — final response tokens (text content)
 - **agent** — agent state updates (agent handoff)
 - **error** — error events
 - **done** — stream termination signal
 
-## Docker
+### Worker lifecycle critical notes
+- `get_agent()` creates a fresh `AsyncConnectionPool` + `AsyncPostgresSaver` per call (not a singleton)
+- Worker always closes the checkpointer pool in `finally` to avoid "Event loop is closed" errors
+- Each Celery task uses its own Redis connection for publishing
 
-```bash
-cd backend
-docker compose up --build
-```
+## Auth
 
-## Testing
+- Signup and login use JWT (HS256, 1-week expiry)
+- Passwords hashed with pbkdf2_sha256 (bcrypt kept for verifying existing hashes)
+- JWT claims include `user_id`, `email`, `role` (defaults to `web_user` for PostgREST)
+- Auth endpoints talk to PostgreSQL via `src/db.py` global pool
 
-```bash
-cd backend
-uv run pytest          # run all tests
-uv run tox             # run tests across all Python versions
-```
+## Code Standards
+- Google-style docstrings on all functions and classes
+- Comments explain WHY not WHAT — never comment self-evident code
+- Pydantic models for all request/response shapes
+- Frontend guidelines in `.claude/rules/frontend.md`
+- Architecture rules in `.claude/rules/architecture.md`
+- Streaming patterns in `.claude/rules/streaming-patterns.md`
