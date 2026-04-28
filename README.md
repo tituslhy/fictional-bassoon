@@ -9,7 +9,7 @@ This project is a showcase of distributed systems engineering applied to AI agen
 ## Architecture
 
 ```mermaid
-%%{init: {'flowchart': {'useMaxWidth': false, 'curve': 'basis'}}}%%
+%%{init: {'flowchart': {'useMaxWidth': false, 'curve': 'basis', 'rankSpacing': 80, 'nodeSpacing': 40}}}%%
 graph TB
     classDef browser fill:#e8e8e8,stroke:#888,color:#222
     classDef frontend fill:#ede9fe,stroke:#7c3aed,color:#3b0764
@@ -34,7 +34,7 @@ graph TB
         API[FastAPI /chat]
         AuthAPI[FastAPI /auth]
         Worker[Celery Worker]
-        Agent[LangGraph Agent]
+        Agent[LangChain Deep Agent]
     end
     subgraph Observability [Langfuse Suite]
         Langfuse[Langfuse Web/Worker]
@@ -76,6 +76,9 @@ graph TB
         Grafana[Grafana Dashboards]
     end
 
+    %% 🔧 VERTICAL SPINE (layout control — do not remove)
+    UI --> NG --> SSE --> API --> Broker --> Worker --> Agent --> PgB --> CitusC
+
     %% FLOW
     UI -->|port 80| NG
     NG --> SSE
@@ -102,10 +105,15 @@ graph TB
     CKP1 --- CKP2
     CKP2 --- CKP3
     Langfuse --> LangfuseRedis
+
+    %% 🔥 YOUR NEW DOTTED EDGE
+    LangfuseRedis -.->|Shared Redis Infra| RedisPrimary
+
     RedisPrimary --> RedisR1
     RedisPrimary --> RedisR2
     Sentinel1 --- Sentinel2
     Sentinel2 --- Sentinel3
+
     Worker -.->|Metrics| Prom
     API -.->|Metrics| Prom
     Alloy -.->|Logs| Loki
@@ -123,7 +131,7 @@ graph TB
     class CH01,CH02,CH03,CKP1,CKP2,CKP3 clickhouse
     class Alloy,Loki,Prom,Tempo,Grafana monitoring
 
-    %% ZONE COLORS (THE MAGIC)
+    %% ZONE COLORS
     style Client fill:#f3f4f6,stroke:#888
     style Proxy fill:#f3f4f6,stroke:#888
     style Frontend fill:#f5f3ff,stroke:#7c3aed
