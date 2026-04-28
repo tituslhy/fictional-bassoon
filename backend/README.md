@@ -11,7 +11,7 @@ This backend exposes several HTTP endpoints for chat and authentication:
 
 Each message to `/chat` triggers a LangGraph Deep Agent that performs reasoning, makes tool calls (e.g., web search), and produces a final response — all streamed token by token to the client.
 
-The architecture uses **Celery** for background task processing and **Redis Sentinel** for high-availability pub/sub as the bridge between the FastAPI server and the async worker.
+The architecture uses **Celery** for background task processing, **Redis Sentinel** for high-availability pub/sub, and **Langfuse** for LLM observability.
 
 ```
 Client ──POST /chat──► FastAPI
@@ -19,6 +19,8 @@ Client ──POST /chat──► FastAPI
                               ├──► Celery worker ──► LangGraph Agent ──► Redis Sentinel Cluster
                               │                                              │
                               ◄── SSE events ──────────────────────────────┘
+                                                                             │
+                                                                       Agent Trace ──► Langfuse
 ```
 
 ## Prerequisites
@@ -28,6 +30,7 @@ Client ──POST /chat──► FastAPI
 - **RabbitMQ** — message broker for Celery (default: `localhost:5672`)
 - **Redis Sentinel** — high-availability pub/sub bridge
 - **PostgreSQL (Citus)** — LangGraph checkpointer for session/state persistence
+- **Langfuse Observability Suite** — for tracing and analytics
 
 ## Installation
 
@@ -56,6 +59,7 @@ Create a `.env` file in the `backend/` directory with the following variables:
 | `DB_URI` | — | **Yes** | PostgreSQL connection string (e.g., `postgresql://user:pass@localhost:5432/dbname`) |
 | `OPENAI_API_KEY` | — | **Yes** | OpenAI API key for LLM |
 | `TAVILY_API_KEY` | — | **Yes** | Tavily API key for web search tool |
+| `LANGFUSE_HOST` | — | **Yes** | Langfuse observability endpoint |
 
 ## Running the Application
 
@@ -94,7 +98,7 @@ curl -X POST http://localhost:8000/chat \
 ## Docker Deployment
 
 ```bash
-# Build and start all services (PostgreSQL/Citus, Redis Sentinel, Clickhouse, Minio, RabbitMQ, backend, celery_worker)
+# Build and start all services (PostgreSQL/Citus, Redis Sentinel, Clickhouse, Minio, Langfuse, RabbitMQ, backend, celery_worker)
 docker compose up --build
 
 # Run in detached mode
@@ -111,9 +115,10 @@ docker compose down
 The Docker setup includes:
 
 - **Citus Cluster** — distributed state persistence
-- **Redis Sentinel Cluster** — high-availability pub/sub
+- **Redis Sentinel Cluster** — high-availability pub/sub, task queuing, and caching
 - **Clickhouse Cluster** — high-performance analytics for observability
 - **Minio** — S3-compatible object storage for observability data
+- **Langfuse** — tracing and observability dashboard
 - **RabbitMQ 3** — Celery broker with management UI (port 5672 + 15672)
 - **Backend** — FastAPI server (port 8000)
 - **Celery Worker** — background agent runner

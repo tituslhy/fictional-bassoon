@@ -35,6 +35,7 @@ graph LR
         Langfuse[Langfuse Web/Worker]
         Minio[Minio Object Store]
         Clickhouse[Clickhouse Cluster]
+        LangfuseRedis[Langfuse Redis Cache/Queue]
     end
 
     subgraph Persistence [Distributed Data Layer]
@@ -85,9 +86,14 @@ graph LR
     Agent -->|Trace| Langfuse
     Langfuse -->|Store| Minio
     Langfuse -->|Analytics| Clickhouse
+    Langfuse -->|Queue/Cache| LangfuseRedis
     
+    %% Monitoring/Metrics
     Worker -.->|Metrics| Prom
     API -.->|Metrics| Prom
+    Redis -.->|Metrics| Prom
+    Clickhouse -.->|Metrics| Prom
+    LangfuseRedis -.->|Metrics| Prom
     
     Alloy -.->|Scrape Logs| Loki
     Prom -.->|Alerts/Data| Grafana
@@ -116,7 +122,7 @@ graph LR
   Shards LangGraph agent state by `thread_id` across a multi-node cluster, ensuring the system can handle millions of concurrent conversations.
 
 - **Langfuse Observability & Clickhouse**  
-  Provides deep tracing of agent trajectories, token usage analysis, and detailed execution logs for production debugging.
+  Provides deep tracing of agent trajectories, token usage analysis, and detailed execution logs for production debugging. Langfuse utilizes Redis/Valkey for asynchronous event queuing (via BullMQ), API key validation, and prompt caching.
 
 - **LGTM Stack for Infrastructure Monitoring**  
   Full integration of Loki (logs), Grafana (dashboards), Tempo (tracing), and Prometheus (metrics) across all distributed boundaries.
