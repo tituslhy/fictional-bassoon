@@ -30,6 +30,10 @@ scrape_configs:
     static_configs:
       - targets: ['rabbitmq:15692']
 
+  - job_name: 'clickhouse'
+    static_configs:
+      - targets: ['clickhouse-01:9363', 'clickhouse-02:9363', 'clickhouse-03:9363']
+
   - job_name: 'grafana'
     static_configs:
       - targets: ['grafana:3000']

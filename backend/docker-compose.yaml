@@ -1,4 +1,100 @@
 services:
+  clickhouse-01:
+    image: clickhouse/clickhouse-server:latest
+    container_name: clickhouse-01
+    hostname: clickhouse-01
+    ports:
+      - "127.0.0.1:18123:8123"
+      - "127.0.0.1:19000:9000"
+    volumes:
+      - ./docker/clickhouse/clickhouse-01/config.d/config.xml:/etc/clickhouse-server/config.d/config.xml:ro
+      - ./docker/clickhouse/clickhouse-01/users.d/users.xml:/etc/clickhouse-server/users.d/users.xml:ro
+      - clickhouse_01_data:/var/lib/clickhouse
+      - clickhouse_01_logs:/var/log/clickhouse-server
+    depends_on:
+      - clickhouse-keeper-01
+      - clickhouse-keeper-02
+      - clickhouse-keeper-03
+    networks:
+      - app_network
+
+  clickhouse-02:
+    image: clickhouse/clickhouse-server:latest
+    container_name: clickhouse-02
+    hostname: clickhouse-02
+    ports:
+      - "127.0.0.1:18124:8123"
+      - "127.0.0.1:19001:9000"
+    volumes:
+      - ./docker/clickhouse/clickhouse-02/config.d/config.xml:/etc/clickhouse-server/config.d/config.xml:ro
+      - ./docker/clickhouse/clickhouse-02/users.d/users.xml:/etc/clickhouse-server/users.d/users.xml:ro
+      - clickhouse_02_data:/var/lib/clickhouse
+      - clickhouse_02_logs:/var/log/clickhouse-server
+    depends_on:
+      - clickhouse-keeper-01
+      - clickhouse-keeper-02
+      - clickhouse-keeper-03
+    networks:
+      - app_network
+
+  clickhouse-03:
+    image: clickhouse/clickhouse-server:latest
+    container_name: clickhouse-03
+    hostname: clickhouse-03
+    ports:
+      - "127.0.0.1:18125:8123"
+      - "127.0.0.1:19002:9000"
+    volumes:
+      - ./docker/clickhouse/clickhouse-03/config.d/config.xml:/etc/clickhouse-server/config.d/config.xml:ro
+      - ./docker/clickhouse/clickhouse-03/users.d/users.xml:/etc/clickhouse-server/users.d/users.xml:ro
+      - clickhouse_03_data:/var/lib/clickhouse
+      - clickhouse_03_logs:/var/log/clickhouse-server
+    depends_on:
+      - clickhouse-keeper-01
+      - clickhouse-keeper-02
+      - clickhouse-keeper-03
+    networks:
+      - app_network
+
+  clickhouse-keeper-01:
+    image: clickhouse/clickhouse-keeper:latest-alpine
+    container_name: clickhouse-keeper-01
+    hostname: clickhouse-keeper-01
+    ports:
+      - "127.0.0.1:9181:9181"
+    volumes:
+      - ./docker/clickhouse/keeper-01/keeper_config.xml:/etc/clickhouse-keeper/keeper_config.xml:ro
+      - clickhouse_keeper_01_data:/var/lib/clickhouse
+      - clickhouse_keeper_01_logs:/var/log/clickhouse-keeper
+    networks:
+      - app_network
+
+  clickhouse-keeper-02:
+    image: clickhouse/clickhouse-keeper:latest-alpine
+    container_name: clickhouse-keeper-02
+    hostname: clickhouse-keeper-02
+    ports:
+      - "127.0.0.1:9182:9181"
+    volumes:
+      - ./docker/clickhouse/keeper-02/keeper_config.xml:/etc/clickhouse-keeper/keeper_config.xml:ro
+      - clickhouse_keeper_02_data:/var/lib/clickhouse
+      - clickhouse_keeper_02_logs:/var/log/clickhouse-keeper
+    networks:
+      - app_network
+
+  clickhouse-keeper-03:
+    image: clickhouse/clickhouse-keeper:latest-alpine
+    container_name: clickhouse-keeper-03
+    hostname: clickhouse-keeper-03
+    ports:
+      - "127.0.0.1:9183:9181"
+    volumes:
+      - ./docker/clickhouse/keeper-03/keeper_config.xml:/etc/clickhouse-keeper/keeper_config.xml:ro
+      - clickhouse_keeper_03_data:/var/lib/clickhouse
+      - clickhouse_keeper_03_logs:/var/log/clickhouse-keeper
+    networks:
+      - app_network
+
   citus_coordinator:
     image: citusdata/citus:13.0
     container_name: citus_coordinator
@@ -335,7 +431,7 @@ services:
     volumes:
       - ./docker/monitoring/alloy/config.alloy:/etc/alloy/config.alloy
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
-    command: run --storage.path=/var/lib/alloy/data --server.http.listen-addr=127.0.0.1:12345 /etc/alloy/config.alloy
+    command: run --storage.path=/var/lib/alloy/data --server.http.listen-addr=0.0.0.0:12345 /etc/alloy/config.alloy
     depends_on:
       - loki
     networks:
@@ -346,6 +442,18 @@ networks:
     driver: bridge
 
 volumes:
+  clickhouse_01_data:
+  clickhouse_01_logs:
+  clickhouse_02_data:
+  clickhouse_02_logs:
+  clickhouse_03_data:
+  clickhouse_03_logs:
+  clickhouse_keeper_01_data:
+  clickhouse_keeper_01_logs:
+  clickhouse_keeper_02_data:
+  clickhouse_keeper_02_logs:
+  clickhouse_keeper_03_data:
+  clickhouse_keeper_03_logs:
   redis_data:
   rabbitmq_data:
   citus_coordinator_data:
