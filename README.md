@@ -274,3 +274,6 @@ Consolidated access through Nginx and direct ports:
 | **Grafana** | - | [http://localhost:3001](http://localhost:3001) | Dashboards & Logs |
 | **Prometheus** | - | [http://localhost:9090](http://localhost:9090) | Metrics |
 | **Redis Insight** | - | [http://localhost:5540](http://localhost:5540) | Redis GUI |
+
+## TODOS
+- Add minio and LangFuse to complete self-hosting LLM observability platform
