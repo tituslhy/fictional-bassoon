@@ -10,7 +10,13 @@ SECRET_KEY = os.getenv("JWT_SECRET", "super-secret-key-change-me")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 1 week
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Use PBKDF2-SHA256 for new passwords to avoid bcrypt backend/runtime issues
+# and bcrypt's 72-byte password limit. Keep bcrypt in the context so existing
+# hashes, if any, still verify.
+pwd_context = CryptContext(
+    schemes=["pbkdf2_sha256", "bcrypt"],
+    deprecated="auto",
+)
 
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)

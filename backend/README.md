@@ -4,7 +4,12 @@ FastAPI SSE streaming backend for a LangGraph Deep Agent.
 
 ## Overview
 
-This backend exposes a single HTTP endpoint (`POST /chat`) that accepts user messages and returns real-time streaming events via Server-Sent Events (SSE). Each message triggers a LangGraph Deep Agent that performs reasoning, makes tool calls (e.g., web search), and produces a final response — all streamed token by token to the client.
+This backend exposes several HTTP endpoints for chat and authentication:
+- `POST /chat`: Accepts user messages and returns real-time streaming events via Server-Sent Events (SSE).
+- `POST /auth/signup`: Creates a new user account.
+- `POST /auth/login`: Authenticates user and returns JWT.
+
+Each message to `/chat` triggers a LangGraph Deep Agent that performs reasoning, makes tool calls (e.g., web search), and produces a final response — all streamed token by token to the client.
 
 The architecture uses **Celery** for background task processing and **Redis pub/sub** as the bridge between the FastAPI server and the async worker.
 
@@ -113,6 +118,37 @@ The Docker setup includes:
 
 ## API Reference
 
+### POST /auth/signup
+
+Create a new user account.
+
+**Request body:**
+
+```json
+{
+  "email": "user@example.com",
+  "password": "securepassword",
+  "full_name": "John Doe"
+}
+```
+
+**Response:** `TokenResponse` (access token)
+
+### POST /auth/login
+
+Authenticate user and return JWT.
+
+**Request body:**
+
+```json
+{
+  "email": "user@example.com",
+  "password": "securepassword"
+}
+```
+
+**Response:** `TokenResponse` (access token)
+
 ### POST /chat
 
 Starts a streaming agent session.
@@ -147,31 +183,6 @@ Starts a streaming agent session.
 | `error` | `string` | Error message |
 | `done` | (empty) | Stream termination signal |
 
-**Example SSE output:**
-
-```
-event: agent
-data: deep_agents
-
-event: reasoning
-data: Let me search for the current weather in Tokyo...
-
-event: tool_call
-data: {"name": "tavily_search", "args": {"query": "weather in Tokyo"}}
-
-event: tool_result
-data: {"results": [...]}
-
-event: answer
-data: Based on the latest weather data, Tokyo is currently
-
-event: answer
-data: 22°C with clear skies.
-
-event: done
-data:
-```
-
 ### GET /health
 
 Simple health check.
@@ -187,7 +198,7 @@ Simple health check.
 ```
 backend/
 ├── main.py                      # FastAPI app entry point (~90 lines)
-│                                # Routes: POST /chat, GET /health
+│                                # Routes: POST /chat, /auth/signup, /auth/login, GET /health
 ├── pyproject.toml               # Python dependencies
 ├── uv.lock                      # Locked dependency lockfile
 ├── .env                         # Environment variables (DO NOT commit)
@@ -196,41 +207,21 @@ backend/
 │
 ├── src/
 │   ├── agent.py                 # LangGraph DeepAgent construction
-│   │                            # Creates agent with GPT-4.1-Nano + TavilySearch
-│   │                            # Uses PostgresSaver for checkpointer
-│   │                            # Memoized at module level
-│   │
+│   ├── auth.py                  # Authentication logic
 │   ├── celery_app.py            # Celery app configuration
-│   │                            # Broker: RabbitMQ
-│   │                            # Backend: RPC (default)
-│   │                            # Imports worker.tasks module
-│   │
+│   ├── db.py                    # Database connection pooling
 │   ├── models/
-│   │   └── chat_models.py       # Pydantic models
-│   │                            # ChatRequest: message, thread_id, job_id
-│   │
+│   │   ├── auth_models.py       # Auth Pydantic models
+│   │   └── chat_models.py       # Chat Pydantic models
 │   ├── queue/
 │   │   └── redis_pubsub.py      # Redis pub/sub helpers
-│   │                            # publish_event(job_id, event) → Redis
-│   │                            # subscribe(job_id) → pubsub object
 │   │
 │   └── worker/
 │       ├── tasks.py              # Celery task definitions
-│       │                         # run_agent_task: sync→async bridge
-│       │                         # Uses _run_coroutine_sync() helper
-│       │
 │       └── worker_runner.py      # Async agent execution
-│                                # run_agent_and_stream():
-│                                #   1. Get agent from agent.py
-│                                #   2. Iterate agent.astream()
-│                                #   3. Publish each event to Redis
 │
 ├── utils/
 │   └── streaming.py             # LangGraph → SSE event conversion
-│                               # stream_agent_events():
-│                               #   - stream_mode=["messages", "updates"]
-│                               #   - version="v2", subgraphs=True
-│                               #   - Extracts reasoning, tool_call, answer, etc.
 │
 ├── docker/
 │   ├── Dockerfile               # Multi-stage Docker image (Python 3.13-slim + uv)
@@ -300,37 +291,6 @@ uv run pytest
 uv run tox
 ```
 
-### Logging
-
-Logging is configured via `logging.ini`. Logs are written to:
-
-- **stdout/stderr** — for Docker/console output
-- **`logs/app.log`** — file log (mounted as Docker volume)
-
-To adjust log levels, edit `logging.ini`:
-
-```ini
-[loggers]
-keys=root
-
-[handlers]
-keys=console
-
-[formatters]
-keys=default
-
-[logger_root]
-level=INFO
-handlers=console
-
-[handler_console]
-class=StreamHandler
-formatter=default
-
-[formatter_default]
-format=%(asctime)s - %(name)s - %(levelname)s - %(message)s
-```
-
 ## Troubleshooting
 
 ### No events streaming to the client
@@ -341,24 +301,6 @@ format=%(asctime)s - %(name)s - %(levelname)s - %(message)s
 | "failed to enqueue chat task" | RabbitMQ unreachable | `rabbitmqctl status` |
 | "subscribed" but no events | Redis unreachable | `redis-cli ping` (should return PONG) |
 | Agent hangs indefinitely | PostgreSQL checkpointer issue | Verify `DB_URI` is correct |
-
-### Celery worker not picking up tasks
-
-```bash
-# Check if worker is running
-celery -A src.celery_app inspect registered
-
-# Check broker connectivity
-rabbitmqctl list_queues
-
-# Restart worker
-celery -A src.celery_app worker --loglevel=debug
-```
-
-### Agent times out
-
-- Default Celery time limits: `soft_time_limit=300s`, `time_limit=360s`
-- Adjust in `src/worker/tasks.py` if agents need more time
 
 ### Port conflicts
 
@@ -376,6 +318,7 @@ celery -A src.celery_app worker --loglevel=debug
 |---|---|
 | `main.py` | FastAPI routes, SSE response |
 | `src/agent.py` | Agent construction (module-level, memoized) |
+| `src/auth.py` | Authentication logic |
 | `src/celery_app.py` | Celery broker/backend config |
 | `src/models/chat_models.py` | Pydantic ChatRequest model |
 | `src/queue/redis_pubsub.py` | Redis publish/subscribe helpers |

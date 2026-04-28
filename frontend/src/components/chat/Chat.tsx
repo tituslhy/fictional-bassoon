@@ -44,10 +44,10 @@ export default function Chat() {
 
       // Mirror to store
       if (targetThreadId) {
-        const thread = store.threads.find((t) => t.id === targetThreadId);
+        const thread = store.threads.find((t: any) => t.id === targetThreadId);
         if (thread) {
           const msgs = [...thread.messages];
-          const idx = msgs.findIndex((m) => m.id === errorMessage.id);
+          const idx = msgs.findIndex((m: any) => m.id === errorMessage.id);
           if (idx >= 0) {
             msgs[idx] = errorMessage;
           } else {
@@ -73,7 +73,7 @@ export default function Chat() {
 
       // Mirror initial creation to store
       if (targetThreadId) {
-        const thread = store.threads.find((t) => t.id === targetThreadId);
+        const thread = store.threads.find((t: any) => t.id === targetThreadId);
         if (thread) {
           store.updateThreadMessages(targetThreadId, [...thread.messages, initialAssistantMsg]);
         }
@@ -93,10 +93,10 @@ export default function Chat() {
 
         // Mirror to store
         if (targetThreadId) {
-          const thread = store.threads.find((t) => t.id === targetThreadId);
+          const thread = store.threads.find((t: any) => t.id === targetThreadId);
           if (thread) {
             const msgs = [...thread.messages];
-            const idx = msgs.findIndex((m) => m.id === updatedMsg.id);
+            const idx = msgs.findIndex((m: any) => m.id === updatedMsg.id);
             if (idx >= 0) {
               msgs[idx] = updatedMsg;
               store.updateThreadMessages(targetThreadId, msgs);
@@ -115,10 +115,10 @@ export default function Chat() {
 
         // Mirror to store
         if (targetThreadId) {
-          const thread = store.threads.find((t) => t.id === targetThreadId);
+          const thread = store.threads.find((t: any) => t.id === targetThreadId);
           if (thread) {
             const msgs = [...thread.messages];
-            const idx = msgs.findIndex((m) => m.id === updatedMsg.id);
+            const idx = msgs.findIndex((m: any) => m.id === updatedMsg.id);
             if (idx >= 0) {
               msgs[idx] = updatedMsg;
               store.updateThreadMessages(targetThreadId, msgs);
@@ -178,10 +178,10 @@ export default function Chat() {
 
         // Mirror to store
         if (targetThreadId) {
-          const thread = store.threads.find((t) => t.id === targetThreadId);
+          const thread = store.threads.find((t: any) => t.id === targetThreadId);
           if (thread) {
             const msgs = [...thread.messages];
-            const idx = msgs.findIndex((m) => m.id === updatedMsg.id);
+            const idx = msgs.findIndex((m: any) => m.id === updatedMsg.id);
             if (idx >= 0) {
               msgs[idx] = updatedMsg;
               store.updateThreadMessages(targetThreadId, msgs);
@@ -221,10 +221,10 @@ export default function Chat() {
 
         // Mirror to store
         if (targetThreadId) {
-          const thread = store.threads.find((t) => t.id === targetThreadId);
+          const thread = store.threads.find((t: any) => t.id === targetThreadId);
           if (thread) {
             const msgs = [...thread.messages];
-            const idx = msgs.findIndex((m) => m.id === updatedMsg.id);
+            const idx = msgs.findIndex((m: any) => m.id === updatedMsg.id);
             if (idx >= 0) {
               msgs[idx] = updatedMsg;
               store.updateThreadMessages(targetThreadId, msgs);
@@ -237,10 +237,10 @@ export default function Chat() {
       case "done": {
         if (targetThreadId) {
           const finalized: ThreadMessage = { ...msg, status: "done" as const };
-          const thread = store.threads.find((t) => t.id === targetThreadId);
+          const thread = store.threads.find((t: any) => t.id === targetThreadId);
           if (thread) {
             const msgs = [...thread.messages];
-            const idx = msgs.findIndex((m) => m.id === finalized.id);
+            const idx = msgs.findIndex((m: any) => m.id === finalized.id);
             if (idx >= 0) {
               msgs[idx] = finalized;
             } else {
@@ -249,7 +249,7 @@ export default function Chat() {
             store.updateThreadMessages(thread.id, msgs);
 
             if (thread.title === "New Thread") {
-              const firstUser = msgs.find((m) => m.role === "user");
+              const firstUser = msgs.find((m: any) => m.role === "user");
               if (firstUser) {
                 const title = firstUser.content.slice(0, 40) + (firstUser.content.length > 40 ? "..." : "");
                 store.updateThreadTitle(targetThreadId, title);
@@ -263,7 +263,7 @@ export default function Chat() {
         break;
       }
     }
-  }, [storeRef, activeThreadId]);
+  }, [storeRef]);
 
   const stream = useSSEStream({
     onEvent: handleMessageEvent,
@@ -292,10 +292,10 @@ export default function Chat() {
 
       // Mirror to store
       if (reliableTargetThreadId) {
-        const thread = store.threads.find((t) => t.id === reliableTargetThreadId);
+        const thread = store.threads.find((t: any) => t.id === reliableTargetThreadId);
         if (thread) {
           const msgs = [...thread.messages];
-          const idx = msgs.findIndex((m) => m.id === errorMessage.id);
+          const idx = msgs.findIndex((m: any) => m.id === errorMessage.id);
           if (idx >= 0) {
             msgs[idx] = errorMessage;
           } else {
@@ -336,7 +336,7 @@ export default function Chat() {
       isStreamingRef.current = true;
       streamingTargetThreadIdRef.current = activeThreadId;
 
-      const thread = store.threads.find((t) => t.id === activeThreadId);
+      const thread = store.threads.find((t: any) => t.id === activeThreadId);
       if (thread) {
         store.updateThreadMessages(activeThreadId, [...thread.messages, userMsg, assistantMsg]);
       }
@@ -346,7 +346,7 @@ export default function Chat() {
     [activeThreadId, stream, storeRef],
   );
 
-  const currentThread = storeRef.current.threads.find((t) => t.id === activeThreadId);
+  const currentThread = storeRef.current.threads.find((t: any) => t.id === activeThreadId);
 
   return (
     <div className="flex h-screen">

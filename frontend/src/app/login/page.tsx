@@ -13,7 +13,7 @@ export default function LoginPage() {
     e.preventDefault();
     try {
       await login(email, password);
-    } catch (err) {
+    } catch (_err) {
       // Error is handled by AuthContext
     }
   };
@@ -78,7 +78,7 @@ export default function LoginPage() {
         </form>
 
         <div className="text-center text-sm">
-          <span className="text-zinc-400">Don't have an account? </span>
+          <span className="text-zinc-400">Don&apos;t have an account? </span>
           <Link href="/signup" className="font-semibold text-blue-500 hover:text-blue-400">
             Sign up
           </Link>

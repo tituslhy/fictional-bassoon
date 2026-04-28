@@ -17,7 +17,7 @@ export default function Sidebar() {
         <NewThreadButton onClick={createThread} />
       </div>
       <nav className="flex-1 overflow-y-auto">
-        {threads.map((thread) => (
+        {threads.map((thread: any) => (
           <ThreadItem
             key={thread.id}
             thread={thread}

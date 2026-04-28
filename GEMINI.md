@@ -1,6 +1,6 @@
 # Project Context: fictional-bassoon
 
-This project is a high-performance, full-stack AI chat application designed to stream real-time agent reasoning, tool calls, tool results, and final answers using Server-Sent Events (SSE). It utilizes a distributed architecture with a FastAPI backend, LangGraph for agent orchestration, and Celery for asynchronous task processing.
+This project is a high-performance, full-stack AI chat application designed to stream real-time agent reasoning, tool calls, tool results, and final answers using Server-Sent Events (SSE). It features secure user authentication with JWT, a distributed architecture with a FastAPI backend, LangGraph for agent orchestration, and Celery for asynchronous task processing.
 
 ## Architecture & Data Flow
 
@@ -12,6 +12,7 @@ graph TD
 
     subgraph API [FastAPI]
         Chat[/chat]
+        Auth[/auth]
     end
 
     subgraph Async [Celery & Redis]
@@ -26,6 +27,7 @@ graph TD
     end
 
     Hook -->|POST| Chat
+    Hook -->|POST| Auth
     Chat -->|Subscribe| PubSub
     Chat -->|Enqueue| Worker
     Worker -->|Execute| Agent
@@ -36,7 +38,7 @@ graph TD
     Chat -->|SSE| Hook
 ```
 
-- **Backend (`backend/`):** FastAPI manages the SSE connection. It generates a unique `job_id` for every request, subscribes to a corresponding Redis Pub/Sub channel, and yields messages as they arrive.
+- **Backend (`backend/`):** FastAPI manages authentication and the SSE connection. It generates a unique `job_id` for every request, subscribes to a corresponding Redis Pub/Sub channel, and yields messages as they arrive.
 - **Worker:** A Celery worker (using RabbitMQ as a broker) executes the agent. It publishes serialized events to the specific Redis channel, ensuring the API layer remains non-blocking.
 - **Intelligence Layer:** LangGraph manages agent state. Checkpoints are persisted to a **Citus Cluster** sharded by `thread_id` to ensure horizontal scalability.
 - **Connection Pooling:** **PgBouncer** is used as a front-door to the database cluster to handle the high volume of transient connections from distributed Celery workers.
@@ -56,20 +58,21 @@ The infrastructure includes a pre-configured observability stack:
 ```bash
 fictional-bassoon/
 ├── backend/
-│   ├── main.py              # Entry point, SSE logic
+│   ├── main.py              # Entry point, SSE & Auth logic
 │   ├── src/
 │   │   ├── agent.py         # LangGraph definition
+│   │   ├── auth.py          # JWT/Password auth
 │   │   ├── celery_app.py    # Worker & Metrics setup
+│   │   ├── db.py            # DB connection pooling
 │   │   ├── queue/           # Redis Pub/Sub management
 │   │   └── worker/          # Task orchestration
 │   ├── docker/              # Monitoring & Deployment config
-│   │   └── citus/           # DB Initialization (init.sql)
 │   └── tests/               # Backend testing
 └── frontend/
     ├── src/
     │   ├── app/             # UI Pages
     │   ├── components/      # React Components
-    │   ├── context/         # Thread State
+    │   ├── context/         # Auth & Thread State
     │   ├── hooks/           # SSE logic (useSSEStream)
     │   └── types/           # TS Interfaces
 ```

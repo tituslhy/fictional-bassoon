@@ -18,6 +18,7 @@ from src.queue.redis_pubsub import subscribe, redis_client
 from src.worker.tasks import run_agent_task
 from src.auth import hash_password, verify_password, create_access_token
 from src.db import get_db_pool, close_db_pool
+from src.db_bootstrap import ensure_api_schema
 
 # Configure logging from INI file
 LOGGING_CONFIG_PATH = Path(__file__).parent / "logging.ini"
@@ -27,7 +28,8 @@ logger = logging.getLogger("backend")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Initialize pool on startup
-    await get_db_pool()
+    pool = await get_db_pool()
+    await ensure_api_schema(pool)
     yield
     # Close pool on shutdown
     await close_db_pool()

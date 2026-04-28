@@ -72,8 +72,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
       
       router.push("/");
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError((err as any).message);
       throw err;
     } finally {
       setIsLoading(false);
@@ -106,8 +106,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
       
       router.push("/");
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError((err as any).message);
       throw err;
     } finally {
       setIsLoading(false);

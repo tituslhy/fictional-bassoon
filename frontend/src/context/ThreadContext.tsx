@@ -59,9 +59,7 @@ export function ThreadProvider({ children }: { children: ReactNode }) {
               })),
           }));
           setThreadsState(formatted);
-          if (formatted.length > 0 && !activeThreadId) {
-            setActiveThreadIdState(formatted[0].id);
-          }
+          setActiveThreadIdState((current) => current ?? formatted[0]?.id ?? null);
         }
       } catch (err) {
         console.error("Failed to fetch threads from DB:", err);

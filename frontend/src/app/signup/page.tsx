@@ -14,7 +14,7 @@ export default function SignupPage() {
     e.preventDefault();
     try {
       await signup(email, password, fullName);
-    } catch (err) {
+    } catch (_err) {
       // Error is handled by AuthContext
     }
   };
