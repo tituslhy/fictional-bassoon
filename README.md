@@ -10,7 +10,7 @@ This project is a showcase of distributed systems engineering applied to AI agen
 
 ```mermaid
 %%{init: {'flowchart': {'useMaxWidth': false, 'curve': 'basis'}}}%%
-graph LR
+graph TB
     classDef browser fill:#e8e8e8,stroke:#888,color:#222
     classDef frontend fill:#ede9fe,stroke:#7c3aed,color:#3b0764
     classDef backend fill:#d1fae5,stroke:#059669,color:#064e3b
@@ -76,6 +76,7 @@ graph LR
         Grafana[Grafana Dashboards]
     end
 
+    %% FLOW
     UI -->|port 80| NG
     NG --> SSE
     NG -->|/api/auth| AuthAPI
@@ -112,6 +113,7 @@ graph LR
     Loki --> Grafana
     Tempo --> Grafana
 
+    %% NODE COLORS
     class UI,NG browser
     class SSE,Auth frontend
     class API,AuthAPI,Worker,Agent backend
@@ -120,6 +122,16 @@ graph LR
     class Langfuse,Minio,LangfuseRedis observability
     class CH01,CH02,CH03,CKP1,CKP2,CKP3 clickhouse
     class Alloy,Loki,Prom,Tempo,Grafana monitoring
+
+    %% ZONE COLORS (THE MAGIC)
+    style Client fill:#f3f4f6,stroke:#888
+    style Proxy fill:#f3f4f6,stroke:#888
+    style Frontend fill:#f5f3ff,stroke:#7c3aed
+    style Backend fill:#ecfdf5,stroke:#059669
+    style Persistence fill:#eff6ff,stroke:#2563eb
+    style Observability fill:#fffbeb,stroke:#d97706
+    style ClickhouseCluster fill:#fef2f2,stroke:#dc2626
+    style Monitoring fill:#f5f3ff,stroke:#7c3aed
 ```
 
 ## Key Design Decisions
