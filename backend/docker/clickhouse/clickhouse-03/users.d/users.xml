@@ -10,7 +10,7 @@
     </profiles>
     <users>
         <default>
-            <password>changeme</password>
+            <password from_env="CLICKHOUSE_PASSWORD" />
             <profile>default</profile>
             <networks>
                 <ip>::/0</ip>

@@ -11,12 +11,19 @@ services:
       - ./docker/clickhouse/clickhouse-01/users.d/users.xml:/etc/clickhouse-server/users.d/users.xml:ro
       - clickhouse_01_data:/var/lib/clickhouse
       - clickhouse_01_logs:/var/log/clickhouse-server
+    environment:
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-changeme}
     depends_on:
       - clickhouse-keeper-01
       - clickhouse-keeper-02
       - clickhouse-keeper-03
     networks:
       - app_network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   clickhouse-02:
     image: clickhouse/clickhouse-server:latest
@@ -30,12 +37,19 @@ services:
       - ./docker/clickhouse/clickhouse-02/users.d/users.xml:/etc/clickhouse-server/users.d/users.xml:ro
       - clickhouse_02_data:/var/lib/clickhouse
       - clickhouse_02_logs:/var/log/clickhouse-server
+    environment:
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-changeme}
     depends_on:
       - clickhouse-keeper-01
       - clickhouse-keeper-02
       - clickhouse-keeper-03
     networks:
       - app_network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   clickhouse-03:
     image: clickhouse/clickhouse-server:latest
@@ -49,12 +63,19 @@ services:
       - ./docker/clickhouse/clickhouse-03/users.d/users.xml:/etc/clickhouse-server/users.d/users.xml:ro
       - clickhouse_03_data:/var/lib/clickhouse
       - clickhouse_03_logs:/var/log/clickhouse-server
+    environment:
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-changeme}
     depends_on:
       - clickhouse-keeper-01
       - clickhouse-keeper-02
       - clickhouse-keeper-03
     networks:
       - app_network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   clickhouse-keeper-01:
     image: clickhouse/clickhouse-keeper:latest-alpine
@@ -482,6 +503,192 @@ services:
       timeout: 3s
       retries: 5
 
+  minio1:
+    image: minio/minio:latest
+    container_name: minio1
+    hostname: minio1
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio1_data:/data
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-password}
+      MINIO_PROMETHEUS_AUTH_TYPE: "public"
+    command: server http://minio{1...4}/data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app_network
+
+  minio2:
+    image: minio/minio:latest
+    container_name: minio2
+    hostname: minio2
+    volumes:
+      - minio2_data:/data
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-password}
+      MINIO_PROMETHEUS_AUTH_TYPE: "public"
+    command: server http://minio{1...4}/data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app_network
+
+  minio3:
+    image: minio/minio:latest
+    container_name: minio3
+    hostname: minio3
+    volumes:
+      - minio3_data:/data
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-password}
+      MINIO_PROMETHEUS_AUTH_TYPE: "public"
+    command: server http://minio{1...4}/data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app_network
+
+  minio4:
+    image: minio/minio:latest
+    container_name: minio4
+    hostname: minio4
+    volumes:
+      - minio4_data:/data
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-password}
+      MINIO_PROMETHEUS_AUTH_TYPE: "public"
+    command: server http://minio{1...4}/data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app_network
+
+  minio_setup:
+    image: minio/mc:latest
+    depends_on:
+      minio1:
+        condition: service_healthy
+    networks:
+      - app_network
+    entrypoint: >
+      /bin/sh -c "
+      until (/usr/bin/mc config host add myminio http://minio1:9000 admin password) do echo '...waiting...' && sleep 1; done;
+      /usr/bin/mc mb myminio/langfuse;
+      /usr/bin/mc policy set public myminio/langfuse;
+      exit 0;
+      "
+
+  langfuse-worker:
+    image: docker.io/langfuse/langfuse-worker:3
+    restart: always
+    depends_on:
+      citus_coordinator:
+        condition: service_healthy
+      minio1:
+        condition: service_healthy
+      app-redis-primary:
+        condition: service_healthy
+      clickhouse-01:
+        condition: service_healthy
+      clickhouse-02:
+        condition: service_healthy
+      clickhouse-03:
+        condition: service_healthy
+    ports:
+      - 3030:3030
+    environment: &langfuse-worker-env
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@citus_coordinator:5432/${POSTGRES_DB}
+      SALT: ${SALT:-mysalt}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-0000000000000000000000000000000000000000000000000000000000000000}
+      TELEMETRY_ENABLED: ${TELEMETRY_ENABLED:-true}
+      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: ${LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES:-false}
+      CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse-01:9000
+      CLICKHOUSE_URL: http://clickhouse-01:8123
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-changeme}
+      CLICKHOUSE_CLUSTER_ENABLED: "true"
+      CLICKHOUSE_CLUSTER_NAME: "default"
+      LANGFUSE_USE_AZURE_BLOB: "false"
+      LANGFUSE_USE_OCI_NATIVE_OBJECT_STORAGE: "false"
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: admin
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: password
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://minio1:9000
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_EVENT_UPLOAD_PREFIX: events/
+      LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_MEDIA_UPLOAD_REGION: auto
+      LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: admin
+      LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: password
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://minio1:9000
+      LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: media/
+      LANGFUSE_S3_BATCH_EXPORT_ENABLED: "true"
+      LANGFUSE_S3_BATCH_EXPORT_BUCKET: langfuse
+      LANGFUSE_S3_BATCH_EXPORT_PREFIX: exports/
+      LANGFUSE_S3_BATCH_EXPORT_REGION: auto
+      LANGFUSE_S3_BATCH_EXPORT_ENDPOINT: http://minio1:9000
+      LANGFUSE_S3_BATCH_EXPORT_EXTERNAL_ENDPOINT: http://localhost:9000
+      LANGFUSE_S3_BATCH_EXPORT_ACCESS_KEY_ID: admin
+      LANGFUSE_S3_BATCH_EXPORT_SECRET_ACCESS_KEY: password
+      LANGFUSE_S3_BATCH_EXPORT_FORCE_PATH_STYLE: "true"
+      REDIS_HOST: app-redis-primary
+      REDIS_PORT: 6379
+      REDIS_AUTH: ""
+      REDIS_TLS_ENABLED: "false"
+    networks:
+      - app_network
+
+  langfuse-web:
+    image: docker.io/langfuse/langfuse:3
+    restart: always
+    depends_on:
+      citus_coordinator:
+        condition: service_healthy
+      minio1:
+        condition: service_healthy
+      app-redis-primary:
+        condition: service_healthy
+      clickhouse-01:
+        condition: service_healthy
+      clickhouse-02:
+        condition: service_healthy
+      clickhouse-03:
+        condition: service_healthy
+    ports:
+      - 4000:3000 # Use 4000 to avoid conflict with frontend on 3000
+    environment:
+      <<: *langfuse-worker-env
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-mysecret}
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   backend:
     build:
       context: .
@@ -501,6 +708,7 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       TAVILY_API_KEY: ${TAVILY_API_KEY}
       JWT_SECRET: ${JWT_SECRET}
+      LANGFUSE_HOST: http://langfuse-web:3000
     depends_on:
       citus_coordinator:
         condition: service_healthy
@@ -509,6 +717,10 @@ services:
       rabbitmq:
         condition: service_healthy
       pgbouncer:
+        condition: service_healthy
+      minio1:
+        condition: service_healthy
+      langfuse-web:
         condition: service_healthy
     networks:
       - app_network
@@ -535,6 +747,7 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       TAVILY_API_KEY: ${TAVILY_API_KEY}
       METRICS_PORT: 8001
+      LANGFUSE_HOST: http://langfuse-web:3000
     depends_on:
       citus_coordinator:
         condition: service_healthy
@@ -543,6 +756,10 @@ services:
       rabbitmq:
         condition: service_healthy
       pgbouncer:
+        condition: service_healthy
+      minio1:
+        condition: service_healthy
+      langfuse-web:
         condition: service_healthy
     networks:
       - app_network
@@ -585,6 +802,10 @@ services:
       - app-redis-sentinel-1-exporter
       - app-redis-sentinel-2-exporter
       - app-redis-sentinel-3-exporter
+      - minio1
+      - minio2
+      - minio3
+      - minio4
     networks:
       - app_network
 
@@ -662,3 +883,7 @@ volumes:
   grafana_data:
   loki_data:
   tempo_data:
+  minio1_data:
+  minio2_data:
+  minio3_data:
+  minio4_data:

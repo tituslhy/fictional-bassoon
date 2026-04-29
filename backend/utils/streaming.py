@@ -6,8 +6,14 @@ import traceback
 from collections.abc import AsyncGenerator
 
 from langchain.messages import AIMessage, AIMessageChunk, AnyMessage, ToolMessage
+from langfuse import Langfuse
+from langfuse.langchain import CallbackHandler
 
 logger = logging.getLogger("backend")
+
+# Initialize a global Langfuse client (singleton).
+# It manages its own background worker threads for batching and uploading traces.
+langfuse_client = Langfuse()
 
 
 async def stream_agent_events(agent, request) -> AsyncGenerator[dict, None]:
@@ -17,7 +23,20 @@ async def stream_agent_events(agent, request) -> AsyncGenerator[dict, None]:
     and ``version="v2"`` to emit typed event dicts.  Emits ``done`` when the
     agent finishes and ``error`` on exception.
     """
-    config = {"configurable": {"thread_id": request.thread_id}}
+    # Create a per-request CallbackHandler using the shared singleton client.
+    # This allows us to set request-specific session_id and metadata without
+    # re-initializing the entire SDK.
+    langfuse_handler = CallbackHandler(
+        langfuse=langfuse_client,
+        trace_name="deep_agent_chat",
+        session_id=request.thread_id,
+        metadata={"job_id": request.job_id},
+    )
+
+    config = {
+        "configurable": {"thread_id": request.thread_id},
+        "callbacks": [langfuse_handler],
+    }
     input_messages = {"messages": [{"role": "user", "content": request.message}]}
     current_agent = None
 
