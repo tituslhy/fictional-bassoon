@@ -10,17 +10,19 @@ services:
       - ./docker/clickhouse/clickhouse-01/config.d/config.xml:/etc/clickhouse-server/config.d/config.xml:ro
       - ./docker/clickhouse/clickhouse-01/users.d/users.xml:/etc/clickhouse-server/users.d/users.xml:ro
       - clickhouse_01_data:/var/lib/clickhouse
-      - clickhouse_01_logs:/var/log/clickhouse-server
     environment:
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-changeme}
     depends_on:
-      - clickhouse-keeper-01
-      - clickhouse-keeper-02
-      - clickhouse-keeper-03
+      clickhouse-keeper-01:
+        condition: service_healthy
+      clickhouse-keeper-02:
+        condition: service_healthy
+      clickhouse-keeper-03:
+        condition: service_healthy
     networks:
       - app_network
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8123/ping"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -31,22 +33,23 @@ services:
     hostname: clickhouse-02
     ports:
       - "18124:8123"
-      - "19001:9000"
     volumes:
       - ./docker/clickhouse/clickhouse-02/config.d/config.xml:/etc/clickhouse-server/config.d/config.xml:ro
       - ./docker/clickhouse/clickhouse-02/users.d/users.xml:/etc/clickhouse-server/users.d/users.xml:ro
       - clickhouse_02_data:/var/lib/clickhouse
-      - clickhouse_02_logs:/var/log/clickhouse-server
     environment:
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-changeme}
     depends_on:
-      - clickhouse-keeper-01
-      - clickhouse-keeper-02
-      - clickhouse-keeper-03
+      clickhouse-keeper-01:
+        condition: service_healthy
+      clickhouse-keeper-02:
+        condition: service_healthy
+      clickhouse-keeper-03:
+        condition: service_healthy
     networks:
       - app_network
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8123/ping"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -57,22 +60,23 @@ services:
     hostname: clickhouse-03
     ports:
       - "18125:8123"
-      - "19002:9000"
     volumes:
       - ./docker/clickhouse/clickhouse-03/config.d/config.xml:/etc/clickhouse-server/config.d/config.xml:ro
       - ./docker/clickhouse/clickhouse-03/users.d/users.xml:/etc/clickhouse-server/users.d/users.xml:ro
       - clickhouse_03_data:/var/lib/clickhouse
-      - clickhouse_03_logs:/var/log/clickhouse-server
     environment:
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-changeme}
     depends_on:
-      - clickhouse-keeper-01
-      - clickhouse-keeper-02
-      - clickhouse-keeper-03
+      clickhouse-keeper-01:
+        condition: service_healthy
+      clickhouse-keeper-02:
+        condition: service_healthy
+      clickhouse-keeper-03:
+        condition: service_healthy
     networks:
       - app_network
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8123/ping"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -81,40 +85,58 @@ services:
     image: clickhouse/clickhouse-keeper:latest-alpine
     container_name: clickhouse-keeper-01
     hostname: clickhouse-keeper-01
+    init: true
     ports:
       - "9181:9181"
     volumes:
       - ./docker/clickhouse/keeper-01/keeper_config.xml:/etc/clickhouse-keeper/keeper_config.xml:ro
       - clickhouse_keeper_01_data:/var/lib/clickhouse
-      - clickhouse_keeper_01_logs:/var/log/clickhouse-keeper
     networks:
       - app_network
+    healthcheck:
+      test: ["CMD-SHELL", "echo ruok | nc 127.0.0.1 9181 | grep imok"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
 
   clickhouse-keeper-02:
     image: clickhouse/clickhouse-keeper:latest-alpine
     container_name: clickhouse-keeper-02
     hostname: clickhouse-keeper-02
+    init: true
     ports:
       - "9182:9181"
     volumes:
       - ./docker/clickhouse/keeper-02/keeper_config.xml:/etc/clickhouse-keeper/keeper_config.xml:ro
       - clickhouse_keeper_02_data:/var/lib/clickhouse
-      - clickhouse_keeper_02_logs:/var/log/clickhouse-keeper
     networks:
       - app_network
+    healthcheck:
+      test: ["CMD-SHELL", "echo ruok | nc 127.0.0.1 9181 | grep imok"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
 
   clickhouse-keeper-03:
     image: clickhouse/clickhouse-keeper:latest-alpine
     container_name: clickhouse-keeper-03
     hostname: clickhouse-keeper-03
+    init: true
     ports:
       - "9183:9181"
     volumes:
       - ./docker/clickhouse/keeper-03/keeper_config.xml:/etc/clickhouse-keeper/keeper_config.xml:ro
       - clickhouse_keeper_03_data:/var/lib/clickhouse
-      - clickhouse_keeper_03_logs:/var/log/clickhouse-keeper
     networks:
       - app_network
+    healthcheck:
+      test: ["CMD-SHELL", "echo ruok | nc 127.0.0.1 9181 | grep imok"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
 
   citus_coordinator:
     image: citusdata/citus:13.0
@@ -616,8 +638,9 @@ services:
     ports:
       - 3030:3030
     environment: &langfuse-worker-env
-      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@citus_coordinator:5432/${POSTGRES_DB}
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:4000}
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@citus_coordinator:5432/${POSTGRES_DB}?schema=langfuse
+      PRISMA_SCHEMA_DISABLE_ADVISORY_LOCK: "true"
       SALT: ${SALT:-mysalt}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-0000000000000000000000000000000000000000000000000000000000000000}
       TELEMETRY_ENABLED: ${TELEMETRY_ENABLED:-true}
@@ -655,7 +678,6 @@ services:
       LANGFUSE_S3_BATCH_EXPORT_FORCE_PATH_STYLE: "true"
       REDIS_HOST: app-redis-primary
       REDIS_PORT: 6379
-      REDIS_AUTH: ""
       REDIS_TLS_ENABLED: "false"
     networks:
       - app_network
@@ -684,10 +706,11 @@ services:
     networks:
       - app_network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider --timeout=5 http://$(hostname -i):3000 || exit 1"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 20
+      start_period: 60s
 
   backend:
     build:
@@ -862,17 +885,11 @@ volumes:
   app_redis_replica_1_data:
   app_redis_replica_2_data:
   clickhouse_01_data:
-  clickhouse_01_logs:
   clickhouse_02_data:
-  clickhouse_02_logs:
   clickhouse_03_data:
-  clickhouse_03_logs:
   clickhouse_keeper_01_data:
-  clickhouse_keeper_01_logs:
   clickhouse_keeper_02_data:
-  clickhouse_keeper_02_logs:
   clickhouse_keeper_03_data:
-  clickhouse_keeper_03_logs:
   redis_data:
   rabbitmq_data:
   citus_coordinator_data:
