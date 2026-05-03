@@ -3,7 +3,7 @@
 COMPOSE_FILE = docker/docker-compose.yml
 DOCKER_COMPOSE = docker compose -f $(COMPOSE_FILE)
 
-.PHONY: help all test up up-build down build restart logs clean prune
+.PHONY: help all test up up-build down build restart logs clean prune sonar
 
 help:
 	@echo "Usage:"
@@ -17,6 +17,18 @@ help:
 	@echo "  make logs         - Follow logs for all services"
 	@echo "  make clean        - Deep clean: stop services, remove volumes, and images"
 	@echo "  make prune        - System-wide Docker cleanup"
+	@echo "  make sonar        - Run SonarQube analysis"
+
+sonar:
+	@if [ -z "$$SONAR_TOKEN" ]; then \
+		echo "❌ SONAR_TOKEN is not set. Did you forget to 'source .env'?"; \
+		exit 1; \
+	fi; \
+	echo "✅ SONAR_TOKEN is set"; \
+	sonar-scanner \
+	-Dsonar.projectKey=tituslhy_fictional-bassoon \
+	-Dsonar.organization=tituslhy \
+	-Dsonar.host.url=https://sonarcloud.io
 
 all: build
 

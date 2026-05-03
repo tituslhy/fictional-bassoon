@@ -27,7 +27,7 @@ async def test_subscribe_basic():
 
 def test_redis_client_initialization():
     """Test that Redis client is initialized with the correct URL."""
-    with patch("redis.asyncio.Redis.from_url"):
+    with patch("src.queue.redis_pubsub.get_redis_client"):
         # We need to reload or re-import to trigger the module level initialization
         # but it's already initialized. Let's check the existing client config if possible.
         from src.queue.redis_pubsub import redis_client

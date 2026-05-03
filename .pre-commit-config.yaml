@@ -1,0 +1,72 @@
+repos:
+  # Python: Ruff (linting + formatting)
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.4.2
+    hooks:
+      - id: ruff
+        name: Ruff lint
+        args: [--fix]
+        stages: [pre-commit]
+      - id: ruff-format
+        name: Ruff format
+        stages: [pre-commit]
+      - id: ruff
+        name: Ruff lint (push)
+        args: [--select=I]
+        stages: [pre-push]
+
+  # Python: Type checking with mypy
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.8.0
+    hooks:
+      - id: mypy
+        name: mypy type check
+        files: ^backend/
+        args: [--no-incremental, --config-file=backend/pyproject.toml]
+        additional_dependencies:
+          - types-passlib
+          - pydantic
+          - sqlalchemy
+        stages: [pre-commit]
+
+  # YAML validation
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: check-yaml
+        args: ['--unsafe']
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-added-large-files
+        args: ['--maxkb=5000']
+
+  # Frontend: Node.js hooks (ESLint + Prettier + TypeScript)
+  - repo: local
+    hooks:
+      - id: frontend-eslint
+        name: ESLint
+        entry: bash -c 'cd frontend && npm run lint -- --fix'
+        language: system
+        files: ^frontend/(src|pages)/.*\.(js|jsx|ts|tsx)$
+        stages: [pre-commit]
+
+      - id: frontend-format
+        name: Prettier format
+        entry: bash -c 'cd frontend && npm run format'
+        language: system
+        files: ^frontend/(src|pages)/.*\.(js|jsx|ts|tsx|json|css)$
+        stages: [pre-commit]
+
+      - id: frontend-type-check
+        name: TypeScript type check
+        entry: bash -c 'cd frontend && npm run type-check'
+        language: system
+        files: ^frontend/(src|pages)/.*\.tsx?$
+        stages: [pre-commit]
+
+      - id: frontend-test
+        name: Frontend tests
+        entry: bash -c 'cd frontend && npm run test -- --run'
+        language: system
+        files: ^frontend/(src|pages)/.*\.(test|spec)\.(ts|tsx)$
+        stages: [pre-push]

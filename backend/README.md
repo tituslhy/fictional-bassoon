@@ -11,14 +11,16 @@ This backend exposes several HTTP endpoints for chat and authentication:
 
 Each message to `/chat` triggers a LangGraph Deep Agent that performs reasoning, makes tool calls (e.g., web search), and produces a final response — all streamed token by token to the client.
 
-The architecture uses **Celery** for background task processing and **Redis pub/sub** as the bridge between the FastAPI server and the async worker.
+The architecture uses **Celery** for background task processing, **Redis Sentinel** for high-availability pub/sub, and **Langfuse** for LLM observability.
 
 ```
 Client ──POST /chat──► FastAPI
                               │
-                              ├──► Celery worker ──► LangGraph Agent ──► Redis pub/sub
+                              ├──► Celery worker ──► LangGraph Agent ──► Redis Sentinel Cluster
                               │                                              │
                               ◄── SSE events ──────────────────────────────┘
+                                                                             │
+                                                                       Agent Trace ──► Langfuse
 ```
 
 ## Prerequisites
@@ -26,8 +28,9 @@ Client ──POST /chat──► FastAPI
 - **Python 3.11+**
 - **uv** — Python package manager (`pip install uv`)
 - **RabbitMQ** — message broker for Celery (default: `localhost:5672`)
-- **Redis** — pub/sub bridge (default: `localhost:6379`)
-- **PostgreSQL** — LangGraph checkpointer for session/state persistence
+- **Redis Sentinel** — high-availability pub/sub bridge
+- **PostgreSQL (Citus)** — LangGraph checkpointer for session/state persistence
+- **Langfuse Observability Suite** — for tracing and analytics
 
 ## Installation
 
@@ -56,6 +59,7 @@ Create a `.env` file in the `backend/` directory with the following variables:
 | `DB_URI` | — | **Yes** | PostgreSQL connection string (e.g., `postgresql://user:pass@localhost:5432/dbname`) |
 | `OPENAI_API_KEY` | — | **Yes** | OpenAI API key for LLM |
 | `TAVILY_API_KEY` | — | **Yes** | Tavily API key for web search tool |
+| `LANGFUSE_HOST` | — | **Yes** | Langfuse observability endpoint |
 
 ## Running the Application
 
@@ -94,7 +98,7 @@ curl -X POST http://localhost:8000/chat \
 ## Docker Deployment
 
 ```bash
-# Build and start all services (PostgreSQL, Redis, RabbitMQ, backend, celery_worker)
+# Build and start all services (PostgreSQL/Citus, Redis Sentinel, Clickhouse, Minio, Langfuse, RabbitMQ, backend, celery_worker)
 docker compose up --build
 
 # Run in detached mode
@@ -110,8 +114,11 @@ docker compose down
 
 The Docker setup includes:
 
-- **PostgreSQL 16** — session state checkpointer (port 5432)
-- **Redis 7** — pub/sub bridge (port 6379)
+- **Citus Cluster** — distributed state persistence
+- **Redis Sentinel Cluster** — high-availability pub/sub, task queuing, and caching
+- **Clickhouse Cluster** — high-performance analytics for observability
+- **Minio** — S3-compatible object storage for observability data
+- **Langfuse** — tracing and observability dashboard
 - **RabbitMQ 3** — Celery broker with management UI (port 5672 + 15672)
 - **Backend** — FastAPI server (port 8000)
 - **Celery Worker** — background agent runner
@@ -225,6 +232,8 @@ backend/
 │
 ├── docker/
 │   ├── Dockerfile               # Multi-stage Docker image (Python 3.13-slim + uv)
+│   ├── clickhouse/              # Clickhouse Cluster config
+│   ├── redis/                   # Sentinel Cluster config
 │   └── .env.example             # Example environment variables
 │
 ├── docker-compose.yaml          # Full stack compose file

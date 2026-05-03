@@ -1,4 +1,143 @@
 services:
+  clickhouse-01:
+    image: clickhouse/clickhouse-server:latest
+    container_name: clickhouse-01
+    hostname: clickhouse-01
+    ports:
+      - "18123:8123"
+      - "19000:9000"
+    volumes:
+      - ./docker/clickhouse/clickhouse-01/config.d/config.xml:/etc/clickhouse-server/config.d/config.xml:ro
+      - ./docker/clickhouse/clickhouse-01/users.d/users.xml:/etc/clickhouse-server/users.d/users.xml:ro
+      - clickhouse_01_data:/var/lib/clickhouse
+    environment:
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-changeme}
+    depends_on:
+      clickhouse-keeper-01:
+        condition: service_healthy
+      clickhouse-keeper-02:
+        condition: service_healthy
+      clickhouse-keeper-03:
+        condition: service_healthy
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8123/ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  clickhouse-02:
+    image: clickhouse/clickhouse-server:latest
+    container_name: clickhouse-02
+    hostname: clickhouse-02
+    ports:
+      - "18124:8123"
+    volumes:
+      - ./docker/clickhouse/clickhouse-02/config.d/config.xml:/etc/clickhouse-server/config.d/config.xml:ro
+      - ./docker/clickhouse/clickhouse-02/users.d/users.xml:/etc/clickhouse-server/users.d/users.xml:ro
+      - clickhouse_02_data:/var/lib/clickhouse
+    environment:
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-changeme}
+    depends_on:
+      clickhouse-keeper-01:
+        condition: service_healthy
+      clickhouse-keeper-02:
+        condition: service_healthy
+      clickhouse-keeper-03:
+        condition: service_healthy
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8123/ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  clickhouse-03:
+    image: clickhouse/clickhouse-server:latest
+    container_name: clickhouse-03
+    hostname: clickhouse-03
+    ports:
+      - "18125:8123"
+    volumes:
+      - ./docker/clickhouse/clickhouse-03/config.d/config.xml:/etc/clickhouse-server/config.d/config.xml:ro
+      - ./docker/clickhouse/clickhouse-03/users.d/users.xml:/etc/clickhouse-server/users.d/users.xml:ro
+      - clickhouse_03_data:/var/lib/clickhouse
+    environment:
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-changeme}
+    depends_on:
+      clickhouse-keeper-01:
+        condition: service_healthy
+      clickhouse-keeper-02:
+        condition: service_healthy
+      clickhouse-keeper-03:
+        condition: service_healthy
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8123/ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  clickhouse-keeper-01:
+    image: clickhouse/clickhouse-keeper:latest-alpine
+    container_name: clickhouse-keeper-01
+    hostname: clickhouse-keeper-01
+    init: true
+    ports:
+      - "9181:9181"
+    volumes:
+      - ./docker/clickhouse/keeper-01/keeper_config.xml:/etc/clickhouse-keeper/keeper_config.xml:ro
+      - clickhouse_keeper_01_data:/var/lib/clickhouse
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD-SHELL", "echo ruok | nc 127.0.0.1 9181 | grep imok"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  clickhouse-keeper-02:
+    image: clickhouse/clickhouse-keeper:latest-alpine
+    container_name: clickhouse-keeper-02
+    hostname: clickhouse-keeper-02
+    init: true
+    ports:
+      - "9182:9181"
+    volumes:
+      - ./docker/clickhouse/keeper-02/keeper_config.xml:/etc/clickhouse-keeper/keeper_config.xml:ro
+      - clickhouse_keeper_02_data:/var/lib/clickhouse
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD-SHELL", "echo ruok | nc 127.0.0.1 9181 | grep imok"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  clickhouse-keeper-03:
+    image: clickhouse/clickhouse-keeper:latest-alpine
+    container_name: clickhouse-keeper-03
+    hostname: clickhouse-keeper-03
+    init: true
+    ports:
+      - "9183:9181"
+    volumes:
+      - ./docker/clickhouse/keeper-03/keeper_config.xml:/etc/clickhouse-keeper/keeper_config.xml:ro
+      - clickhouse_keeper_03_data:/var/lib/clickhouse
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD-SHELL", "echo ruok | nc 127.0.0.1 9181 | grep imok"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
   citus_coordinator:
     image: citusdata/citus:13.0
     container_name: citus_coordinator
@@ -157,12 +296,201 @@ services:
       timeout: 3s
       retries: 5
 
+  app-redis-primary:
+    image: redis:7-alpine
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    ports:
+      - "16380:6379"
+    volumes:
+      - ./docker/redis/app-primary/redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - app_redis_primary_data:/data
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  app-redis-replica-1:
+    image: redis:7-alpine
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    ports:
+      - "16381:6379"
+    volumes:
+      - ./docker/redis/app-replica/redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - app_redis_replica_1_data:/data
+    depends_on:
+      app-redis-primary:
+        condition: service_healthy
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  app-redis-replica-2:
+    image: redis:7-alpine
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    ports:
+      - "16382:6379"
+    volumes:
+      - ./docker/redis/app-replica/redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - app_redis_replica_2_data:/data
+    depends_on:
+      app-redis-primary:
+        condition: service_healthy
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  app-redis-sentinel-1:
+    image: redis:7-alpine
+    command:
+      - /bin/sh
+      - -c
+      - cp /etc/redis/sentinel.conf /tmp/sentinel.conf && exec redis-server /tmp/sentinel.conf --sentinel
+    ports:
+      - "36379:26379"
+    volumes:
+      - ./docker/redis/sentinel/sentinel.conf:/etc/redis/sentinel.conf:ro
+    depends_on:
+      app-redis-primary:
+        condition: service_healthy
+      app-redis-replica-1:
+        condition: service_healthy
+      app-redis-replica-2:
+        condition: service_healthy
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "26379", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  app-redis-sentinel-2:
+    image: redis:7-alpine
+    command:
+      - /bin/sh
+      - -c
+      - cp /etc/redis/sentinel.conf /tmp/sentinel.conf && exec redis-server /tmp/sentinel.conf --sentinel
+    ports:
+      - "36380:26379"
+    volumes:
+      - ./docker/redis/sentinel/sentinel.conf:/etc/redis/sentinel.conf:ro
+    depends_on:
+      app-redis-primary:
+        condition: service_healthy
+      app-redis-replica-1:
+        condition: service_healthy
+      app-redis-replica-2:
+        condition: service_healthy
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "26379", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  app-redis-sentinel-3:
+    image: redis:7-alpine
+    command:
+      - /bin/sh
+      - -c
+      - cp /etc/redis/sentinel.conf /tmp/sentinel.conf && exec redis-server /tmp/sentinel.conf --sentinel
+    ports:
+      - "36381:26379"
+    volumes:
+      - ./docker/redis/sentinel/sentinel.conf:/etc/redis/sentinel.conf:ro
+    depends_on:
+      app-redis-primary:
+        condition: service_healthy
+      app-redis-replica-1:
+        condition: service_healthy
+      app-redis-replica-2:
+        condition: service_healthy
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "26379", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   redis-exporter:
     image: oliver006/redis_exporter:latest
     environment:
       - REDIS_ADDR=redis:6379
     depends_on:
       - redis
+    networks:
+      - app_network
+
+  app-redis-primary-exporter:
+    image: oliver006/redis_exporter:latest
+    environment:
+      - REDIS_ADDR=app-redis-primary:6379
+    depends_on:
+      app-redis-primary:
+        condition: service_healthy
+    networks:
+      - app_network
+
+  app-redis-replica-1-exporter:
+    image: oliver006/redis_exporter:latest
+    environment:
+      - REDIS_ADDR=app-redis-replica-1:6379
+    depends_on:
+      app-redis-replica-1:
+        condition: service_healthy
+    networks:
+      - app_network
+
+  app-redis-replica-2-exporter:
+    image: oliver006/redis_exporter:latest
+    environment:
+      - REDIS_ADDR=app-redis-replica-2:6379
+    depends_on:
+      app-redis-replica-2:
+        condition: service_healthy
+    networks:
+      - app_network
+
+  app-redis-sentinel-1-exporter:
+    image: oliver006/redis_exporter:latest
+    environment:
+      - REDIS_ADDR=redis://app-redis-sentinel-1:26379
+    depends_on:
+      app-redis-sentinel-1:
+        condition: service_healthy
+    networks:
+      - app_network
+
+  app-redis-sentinel-2-exporter:
+    image: oliver006/redis_exporter:latest
+    environment:
+      - REDIS_ADDR=redis://app-redis-sentinel-2:26379
+    depends_on:
+      app-redis-sentinel-2:
+        condition: service_healthy
+    networks:
+      - app_network
+
+  app-redis-sentinel-3-exporter:
+    image: oliver006/redis_exporter:latest
+    environment:
+      - REDIS_ADDR=redis://app-redis-sentinel-3:26379
+    depends_on:
+      app-redis-sentinel-3:
+        condition: service_healthy
     networks:
       - app_network
 
@@ -197,6 +525,193 @@ services:
       timeout: 3s
       retries: 5
 
+  minio1:
+    image: minio/minio:latest
+    container_name: minio1
+    hostname: minio1
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio1_data:/data
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-password}
+      MINIO_PROMETHEUS_AUTH_TYPE: "public"
+    command: server http://minio{1...4}/data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app_network
+
+  minio2:
+    image: minio/minio:latest
+    container_name: minio2
+    hostname: minio2
+    volumes:
+      - minio2_data:/data
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-password}
+      MINIO_PROMETHEUS_AUTH_TYPE: "public"
+    command: server http://minio{1...4}/data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app_network
+
+  minio3:
+    image: minio/minio:latest
+    container_name: minio3
+    hostname: minio3
+    volumes:
+      - minio3_data:/data
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-password}
+      MINIO_PROMETHEUS_AUTH_TYPE: "public"
+    command: server http://minio{1...4}/data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app_network
+
+  minio4:
+    image: minio/minio:latest
+    container_name: minio4
+    hostname: minio4
+    volumes:
+      - minio4_data:/data
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-password}
+      MINIO_PROMETHEUS_AUTH_TYPE: "public"
+    command: server http://minio{1...4}/data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app_network
+
+  minio_setup:
+    image: minio/mc:latest
+    depends_on:
+      minio1:
+        condition: service_healthy
+    networks:
+      - app_network
+    entrypoint: >
+      /bin/sh -c "
+      until (/usr/bin/mc config host add myminio http://minio1:9000 admin password) do echo '...waiting...' && sleep 1; done;
+      /usr/bin/mc mb myminio/langfuse;
+      /usr/bin/mc policy set public myminio/langfuse;
+      exit 0;
+      "
+
+  langfuse-worker:
+    image: docker.io/langfuse/langfuse-worker:3
+    restart: always
+    depends_on:
+      citus_coordinator:
+        condition: service_healthy
+      minio1:
+        condition: service_healthy
+      app-redis-primary:
+        condition: service_healthy
+      clickhouse-01:
+        condition: service_healthy
+      clickhouse-02:
+        condition: service_healthy
+      clickhouse-03:
+        condition: service_healthy
+    ports:
+      - 3030:3030
+    environment: &langfuse-worker-env
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:4000}
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@citus_coordinator:5432/${POSTGRES_DB}?schema=langfuse
+      PRISMA_SCHEMA_DISABLE_ADVISORY_LOCK: "true"
+      SALT: ${SALT:-mysalt}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-0000000000000000000000000000000000000000000000000000000000000000}
+      TELEMETRY_ENABLED: ${TELEMETRY_ENABLED:-true}
+      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: ${LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES:-false}
+      CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse-01:9000
+      CLICKHOUSE_URL: http://clickhouse-01:8123
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-changeme}
+      CLICKHOUSE_CLUSTER_ENABLED: "true"
+      CLICKHOUSE_CLUSTER_NAME: "default"
+      LANGFUSE_USE_AZURE_BLOB: "false"
+      LANGFUSE_USE_OCI_NATIVE_OBJECT_STORAGE: "false"
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: admin
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: password
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://minio1:9000
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_EVENT_UPLOAD_PREFIX: events/
+      LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_MEDIA_UPLOAD_REGION: auto
+      LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: admin
+      LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: password
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://minio1:9000
+      LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: media/
+      LANGFUSE_S3_BATCH_EXPORT_ENABLED: "true"
+      LANGFUSE_S3_BATCH_EXPORT_BUCKET: langfuse
+      LANGFUSE_S3_BATCH_EXPORT_PREFIX: exports/
+      LANGFUSE_S3_BATCH_EXPORT_REGION: auto
+      LANGFUSE_S3_BATCH_EXPORT_ENDPOINT: http://minio1:9000
+      LANGFUSE_S3_BATCH_EXPORT_EXTERNAL_ENDPOINT: http://localhost:9000
+      LANGFUSE_S3_BATCH_EXPORT_ACCESS_KEY_ID: admin
+      LANGFUSE_S3_BATCH_EXPORT_SECRET_ACCESS_KEY: password
+      LANGFUSE_S3_BATCH_EXPORT_FORCE_PATH_STYLE: "true"
+      REDIS_HOST: app-redis-primary
+      REDIS_PORT: 6379
+      REDIS_TLS_ENABLED: "false"
+    networks:
+      - app_network
+
+  langfuse-web:
+    image: docker.io/langfuse/langfuse:3
+    restart: always
+    depends_on:
+      citus_coordinator:
+        condition: service_healthy
+      minio1:
+        condition: service_healthy
+      app-redis-primary:
+        condition: service_healthy
+      clickhouse-01:
+        condition: service_healthy
+      clickhouse-02:
+        condition: service_healthy
+      clickhouse-03:
+        condition: service_healthy
+    ports:
+      - 4000:3000 # Use 4000 to avoid conflict with frontend on 3000
+    environment:
+      <<: *langfuse-worker-env
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-mysecret}
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider --timeout=5 http://$(hostname -i):3000 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+
   backend:
     build:
       context: .
@@ -216,6 +731,7 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       TAVILY_API_KEY: ${TAVILY_API_KEY}
       JWT_SECRET: ${JWT_SECRET}
+      LANGFUSE_HOST: http://langfuse-web:3000
     depends_on:
       citus_coordinator:
         condition: service_healthy
@@ -224,6 +740,10 @@ services:
       rabbitmq:
         condition: service_healthy
       pgbouncer:
+        condition: service_healthy
+      minio1:
+        condition: service_healthy
+      langfuse-web:
         condition: service_healthy
     networks:
       - app_network
@@ -250,6 +770,7 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       TAVILY_API_KEY: ${TAVILY_API_KEY}
       METRICS_PORT: 8001
+      LANGFUSE_HOST: http://langfuse-web:3000
     depends_on:
       citus_coordinator:
         condition: service_healthy
@@ -258,6 +779,10 @@ services:
       rabbitmq:
         condition: service_healthy
       pgbouncer:
+        condition: service_healthy
+      minio1:
+        condition: service_healthy
+      langfuse-web:
         condition: service_healthy
     networks:
       - app_network
@@ -294,6 +819,16 @@ services:
       - citus_worker_2_exporter
       - pgbouncer_exporter
       - redis-exporter
+      - app-redis-primary-exporter
+      - app-redis-replica-1-exporter
+      - app-redis-replica-2-exporter
+      - app-redis-sentinel-1-exporter
+      - app-redis-sentinel-2-exporter
+      - app-redis-sentinel-3-exporter
+      - minio1
+      - minio2
+      - minio3
+      - minio4
     networks:
       - app_network
 
@@ -314,7 +849,7 @@ services:
   grafana:
     image: grafana/grafana:latest
     ports:
-      - "127.0.0.1:3001:3000"
+      - "3001:3000"
     volumes:
       - ./docker/monitoring/grafana/provisioning:/etc/grafana/provisioning
       - grafana_data:/var/lib/grafana
@@ -331,11 +866,11 @@ services:
   alloy:
     image: grafana/alloy:latest
     ports:
-      - "127.0.0.1:12345:12345"
+      - "12345:12345"
     volumes:
       - ./docker/monitoring/alloy/config.alloy:/etc/alloy/config.alloy
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
-    command: run --storage.path=/var/lib/alloy/data --server.http.listen-addr=127.0.0.1:12345 /etc/alloy/config.alloy
+    command: run --storage.path=/var/lib/alloy/data --server.http.listen-addr=0.0.0.0:12345 /etc/alloy/config.alloy
     depends_on:
       - loki
     networks:
@@ -346,6 +881,15 @@ networks:
     driver: bridge
 
 volumes:
+  app_redis_primary_data:
+  app_redis_replica_1_data:
+  app_redis_replica_2_data:
+  clickhouse_01_data:
+  clickhouse_02_data:
+  clickhouse_03_data:
+  clickhouse_keeper_01_data:
+  clickhouse_keeper_02_data:
+  clickhouse_keeper_03_data:
   redis_data:
   rabbitmq_data:
   citus_coordinator_data:
@@ -356,3 +900,7 @@ volumes:
   grafana_data:
   loki_data:
   tempo_data:
+  minio1_data:
+  minio2_data:
+  minio3_data:
+  minio4_data:

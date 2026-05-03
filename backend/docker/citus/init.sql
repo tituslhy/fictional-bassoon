@@ -1,8 +1,11 @@
 -- Create LangGraph tables (latest schema for langgraph-checkpoint-postgres)
 -- We create them here but we DO NOT distribute them via Citus.
--- Reasoning: Citus has a known issue with LangGraph's correlated subqueries 
+-- Reasoning: Citus has a known issue with LangGraph's correlated subqueries
 -- involving jsonb_each_text on distributed tables (InternalError: invalid attnum).
 -- These remain as standard local tables on the coordinator node.
+
+-- IMPORTANT: We use the 'public' schema for LangGraph, but we must ensure it
+-- doesn't conflict with Langfuse. Langfuse will be forced into its own schema.
 
 CREATE TABLE IF NOT EXISTS checkpoint_migrations (
     v INTEGER PRIMARY KEY
@@ -173,3 +176,8 @@ $$ language 'plpgsql';
 
 CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON api.users FOR EACH ROW EXECUTE PROCEDURE api.update_updated_at_column();
 CREATE TRIGGER update_threads_updated_at BEFORE UPDATE ON api.threads FOR EACH ROW EXECUTE PROCEDURE api.update_updated_at_column();
+
+-------------------------------------------------------------------------------
+-- Langfuse Isolation
+-------------------------------------------------------------------------------
+CREATE SCHEMA IF NOT EXISTS langfuse;

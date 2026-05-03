@@ -2,5 +2,6 @@
 .vscode/
 .idea/
 .env
-.env.*
 *.log
+.mypy_cache/
+.scannerwork/
