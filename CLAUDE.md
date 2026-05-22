@@ -2,113 +2,108 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Project
+## What this project is
 
-FastAPI SSE streaming backend for a LangGraph Deep Agent, paired with a Next.js chat frontend. Streams reasoning, tool calls, tool results, and final answer as Server-Sent Events (SSE). Celery + Redis pub/sub bridges the async worker to the FastAPI response.
+A full-stack AI chat application that streams agent reasoning, tool calls, and final answers in real time via SSE. The backend is FastAPI + Celery + LangGraph (Python); the frontend is Next.js App Router (TypeScript). Infrastructure is fully Dockerised with PostgreSQL/Citus, Redis Sentinel, RabbitMQ, and an LGTM observability stack.
 
-## Structure
-
-- `main.py` — FastAPI app entry point (~170 lines): `/chat`, `/auth/signup`, `/auth/login`, `/health`
-- `src/agent.py` — LangGraph agent construction via `create_agent()` / `get_agent()` factory functions
-- `src/auth.py` — JWT token creation, password hashing (pbkdf2_sha256 + bcrypt fallback)
-- `src/db.py` — Global AsyncConnectionPool singleton (FastAPI lifespan)
-- `src/db_bootstrap.py` — Ensures `api` schema exists on startup
-- `utils/streaming.py` — LangGraph event conversion to typed SSE dicts
-- `src/models/chat_models.py` — Pydantic request/response models
-- `src/models/auth_models.py` — Auth-specific Pydantic models
-- `src/celery_app.py` — Celery config (broker, backend)
-- `src/worker/tasks.py` — Celery task definition, bridges sync→async
-- `src/worker/worker_runner.py` — async agent execution, publishes to Redis
-- `src/queue/redis_pubsub.py` — `publish_event()` and `subscribe()` helpers
-- `docker/` — Docker compose (unified stack), nginx config
-- `frontend/` — Next.js chat app
-
-## Request flow
+## Repository layout
 
 ```
-POST /chat
-  → FastAPI generates job_id (UUID)
-  → subscribe to Redis channel "stream:{job_id}"
-  → enqueue run_agent_task (Celery)
-  → yield SSE events from Redis pub/sub to client
+fictional-bassoon/
+├── backend/        # FastAPI app + Celery worker
+├── frontend/       # Next.js App Router
+├── docker/         # Master docker-compose.yml + nginx reverse proxy
+└── Makefile        # Orchestration targets (delegates to docker/)
 ```
 
-```
-Celery worker:
-  → run_agent_task (sync entry) → run_agent_and_stream() (async)
-  → get_agent() → creates fresh AsyncConnectionPool + AsyncPostgresSaver per task
-  → agent.astream() → stream_agent_events() (convert LangGraph events to SSE dicts)
-  → publish_event() → Redis pub/sub "stream:{job_id}"
-```
+## Commands
 
-## Dev Commands
+### Backend (`cd backend`)
 
 ```bash
-# Backend
-cd backend
-uv sync                                          # install deps
-uvicorn main:app --reload                        # dev server (port 8000)
-celery -A src.celery_app worker --loglevel=info  # required for streaming
+uv sync                              # install dependencies
+uv run pytest                        # run all tests
+uv run pytest tests/test_streaming.py  # run a single test file
+uv run pytest -k "test_name"         # run a single test by name
+uv run ruff check .                  # lint
+uv run ruff format .                 # format
+uv run mypy .                        # type-check
 
-# Frontend
-cd frontend
-npm install                                     # install deps
-npm run dev                                     # dev server (port 3000)
-npm run test                                    # run vitest
-npm run test:ui                                 # vitest with UI
-npm run lint                                    # eslint
-npm run build                                   # production build
-
-# Tests
-cd backend
-uv run pytest                                   # run all tests
-uv run pytest tests/test_streaming.py            # single test file
-uv run pytest tests/test_streaming.py::test_name # single test
-uv run pytest --cov=src                          # with coverage
-uv run tox                                       # run across Python versions
-
-# Docker (unified stack)
-cd docker
-docker compose up -d
-
-# Docker (backend infra only)
-cd backend
-docker compose up -d
+# Run locally (infrastructure must be up first)
+celery -A src.celery_app worker --loglevel=info &
+uvicorn main:app --reload
 ```
 
-## Streaming Patterns
+### Frontend (`cd frontend`)
 
-### Non-negotiable API contract
-- `stream_mode=["messages", "updates"]`
-- `version="v2"`
-- `subgraphs=True`
-- Reasoning content lives in `content_blocks` — NEVER in `additional_kwargs`
+```bash
+npm install
+npm run dev        # dev server on :3000
+npm run build      # production build
+npm run test       # Vitest
+npm run lint       # ESLint
+npm run format     # ESLint + Prettier
+```
 
-### Event types emitted by utils/streaming.py
-- **reasoning** — thinking tokens (from content_blocks)
-- **tool_call** — tool invocation
-- **tool_result** — tool response
-- **answer** — final response tokens (text content)
-- **agent** — agent state updates (agent handoff)
-- **error** — error events
-- **done** — stream termination signal
+### Docker / full stack (from repo root)
 
-### Worker lifecycle critical notes
-- `get_agent()` creates a fresh `AsyncConnectionPool` + `AsyncPostgresSaver` per call (not a singleton)
-- Worker always closes the checkpointer pool in `finally` to avoid "Event loop is closed" errors
-- Each Celery task uses its own Redis connection for publishing
+```bash
+make up            # start all services (detached)
+make up-build      # rebuild images then start
+make down          # stop and remove containers
+make logs          # follow logs
+make clean         # remove volumes and images
+```
 
-## Auth
+The master compose at `docker/docker-compose.yml` includes `backend/docker-compose.yaml` and the frontend service, plus an nginx reverse proxy on `:80`.
 
-- Signup and login use JWT (HS256, 1-week expiry)
-- Passwords hashed with pbkdf2_sha256 (bcrypt kept for verifying existing hashes)
-- JWT claims include `user_id`, `email`, `role` (defaults to `web_user` for PostgREST)
-- Auth endpoints talk to PostgreSQL via `src/db.py` global pool
+## Architecture rules
 
-## Code Standards
-- Google-style docstrings on all functions and classes
-- Comments explain WHY not WHAT — never comment self-evident code
-- Pydantic models for all request/response shapes
-- Frontend guidelines in `.claude/rules/frontend.md`
-- Architecture rules in `.claude/rules/architecture.md`
-- Streaming patterns in `.claude/rules/streaming-patterns.md`
+Detailed rules live in `.claude/rules/` and are always loaded. Summary of what matters most:
+
+- `main.py` is thin (~20 lines of real logic). Business logic belongs in `src/`.
+- `src/agent.py` constructs the LangGraph agent at **module level** — no factory wrappers.
+- `src/models/` contains Pydantic models only — no utilities.
+- LangGraph streaming uses `stream_mode=["messages","updates"]`, `version="v2"`, `subgraphs=True`. Do not change these.
+- Reasoning tokens come from `content_blocks`, never `additional_kwargs`.
+
+## Key infrastructure details
+
+- **Database**: PostgreSQL with Citus extension, sharded by `thread_id`. Connection pooling via PgBouncer on port 6432. Schema in `backend/src/db_bootstrap.py` (api.users, api.threads, api.messages with Row-Level Security).
+- **Broker**: RabbitMQ (`BROKER_URL`). Celery result backend is Redis.
+- **Redis**: Sentinel cluster (3 nodes + 3 sentinels) for HA. `redis_pubsub.py` supports Sentinel mode via `REDIS_SENTINEL_HOSTS`.
+- **Observability**: Langfuse for LLM traces, Prometheus + Grafana + Loki + Tempo (LGTM stack). Celery worker starts a Prometheus metrics server on startup.
+
+## Environment variables
+
+Copy `backend/.env.example` to `backend/.env`. Required keys:
+
+| Variable | Purpose |
+|---|---|
+| `OPENAI_API_KEY` | LLM provider |
+| `TAVILY_API_KEY` | Web search tool |
+| `BROKER_URL` | RabbitMQ connection string |
+| `REDIS_URL` | Redis (or Sentinel config) |
+| `DB_URI` | PostgreSQL via PgBouncer |
+| `JWT_SECRET` | Auth token signing |
+| `LANGFUSE_*` | Observability (optional locally) |
+
+Frontend expects `NEXT_PUBLIC_API_URL` in `frontend/.env.local` (default: `http://localhost:8000`).
+
+## Local service ports
+
+| Service | Port |
+|---|---|
+| Next.js UI | 3000 |
+| FastAPI | 8000 |
+| Grafana | 3001 |
+| Langfuse | 3030 |
+| Prometheus | 9090 |
+| Redis Insight | 5540 |
+| PostgREST | 3002 |
+
+## SSE event types
+
+The backend emits these event types over the `/chat` SSE stream; the frontend `useSSEStream.ts` hook and `StreamingRenderer.tsx` consume them:
+
+`reasoning` · `tool_call` · `tool_result` · `answer` · `agent` · `error` · `done`
