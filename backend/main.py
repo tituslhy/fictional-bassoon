@@ -150,22 +150,22 @@ async def chat(request: ChatRequest):
         await pubsub.close()
 
 
-@app.get("/health", response_model=HealthResponse)
+@app.get("/health")
 async def health() -> HealthResponse:
     """Health check endpoint with Redis connectivity check."""
     try:
         await redis_client.ping()
         return HealthResponse(status="ok", redis="connected")
     except Exception as e:
-        logger.error("Redis health check failed: %s", e)
+        logger.exception("Redis health check failed: %s", e)
         return HealthResponse(status="error", redis="disconnected")
 
 
 if __name__ == "__main__":
-    logger.info("starting uvicorn on 0.0.0.0:8000")
+    logger.info("starting uvicorn on 127.0.0.1:8000")
     uvicorn.run(
         "main:app",
-        host="0.0.0.0",
+        host="127.0.0.1",
         port=8000,
         log_level="info",
     )

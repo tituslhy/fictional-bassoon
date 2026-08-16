@@ -5,3 +5,5 @@
 *.log
 .mypy_cache/
 .scannerwork/
+.ruff_cache/
+.serena/
