@@ -33,6 +33,7 @@ dependencies = [
     "pydantic[email]>=2.13.2",
     "pre-commit>=4.6.0",
     "langfuse>=4.5.1",
+    "ag-ui-protocol==0.1.21",
 ]
 
 [tool.pytest.ini_options]

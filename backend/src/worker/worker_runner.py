@@ -1,9 +1,12 @@
 """Async worker: runs the agent and publishes events to Redis pub/sub."""
 
 import logging
+
+from ag_ui.core.events import RunErrorEvent
 from psycopg_pool import AsyncConnectionPool
+
 from src.agent import get_agent
-from src.queue.redis_pubsub import publish_event, get_redis_connection
+from src.queue.redis_pubsub import get_redis_connection, publish_event
 from utils.streaming import stream_agent_events
 
 logger = logging.getLogger("backend")
@@ -27,7 +30,7 @@ async def run_agent_and_stream(request):
 
         # For AsyncPostgresSaver, the pool is typically stored in 'conn'
         checkpointer = agent.checkpointer
-        conn = getattr(checkpointer, 'conn', None)
+        conn = getattr(checkpointer, "conn", None)
 
         # Use a fresh Redis connection for this task's event loop.
         async with get_redis_connection() as redis:
@@ -40,10 +43,21 @@ async def run_agent_and_stream(request):
 
     except Exception as e:
         logger.error("Error during agent setup or streaming: %s", e)
-        # Publish terminal error and done events
+        # Publish a single terminal RUN_ERROR event. This path fires when
+        # agent/checkpointer setup itself fails, before stream_agent_events
+        # ever runs, so there is no RUN_STARTED to close out — RUN_ERROR is
+        # the sole terminal signal here (not followed by RUN_FINISHED, which
+        # would imply a distinct successful completion).
+        error_event = RunErrorEvent(message=str(e) or type(e).__name__)
         async with get_redis_connection() as redis:
-            await publish_event(request.job_id, {"event": "error", "data": str(e) or type(e).__name__}, client=redis)
-            await publish_event(request.job_id, {"event": "done", "data": ""}, client=redis)
+            await publish_event(
+                request.job_id,
+                {
+                    "event": error_event.type.value,
+                    "data": error_event.model_dump_json(by_alias=True),
+                },
+                client=redis,
+            )
         raise
 
     finally:
