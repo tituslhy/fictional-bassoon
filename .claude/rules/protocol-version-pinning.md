@@ -36,9 +36,29 @@ last twelve months.
 
 | Protocol | Package | Version pinned | Date |
 |---|---|---|---|
-| AG-UI | _tbd_ | _tbd_ | _tbd_ |
+| AG-UI | `ag-ui-protocol` | `0.1.21` | 2026-08-31 |
 | A2UI | _no package installed — spec-only, see note below_ | spec v1.0 (`@a2ui/web_core@0.10.6`'s `src/v1_0/schemas/*.json`, `$id: https://a2ui.org/specification/v1_0/...`) | 2026-08-31 |
 | A2A | _tbd_ | _tbd_ | _tbd_ |
+
+### AG-UI pin note (backend-agui-developer, 2026-08-31; ported from its worktree at merge)
+
+`ag-ui-protocol==0.1.21` was published to PyPI on 2026-08-27 (verified via
+`pip download` + inspecting the installed wheel's `ag_ui/core/events.py` and
+`ag_ui/core/types.py` directly — not from memory or a blog post, per
+`protocol-spec-verification.md`). Event vocabulary is the `EventType` enum in
+`ag_ui/core/events.py`: `RUN_STARTED`, `RUN_FINISHED`, `RUN_ERROR`,
+`STEP_STARTED`, `STEP_FINISHED`, `TEXT_MESSAGE_START/CONTENT/END/CHUNK`,
+`REASONING_MESSAGE_START/CONTENT/END/CHUNK` (plus `REASONING_START/END` phase
+markers, unused by this rewrite), `TOOL_CALL_START/ARGS/END/CHUNK/RESULT`,
+`STATE_SNAPSHOT/DELTA`, `MESSAGES_SNAPSHOT`, `ACTIVITY_SNAPSHOT/DELTA`, `RAW`,
+`CUSTOM`, `SUBAGENT_STARTED/FINISHED/ERROR`. The reference `EventEncoder`
+(`ag_ui/encoder/encoder.py`) puts the full event JSON (camelCase, via
+`model_dump_json(by_alias=True)`) on the SSE `data:` line only and does not
+use the SSE `event:` field at all — this repo's implementation additionally
+sets `event:` to the AG-UI type name for compatibility with the existing
+hand-rolled `parseSSE()` in `useSSEStream.ts` (see
+`backend/utils/streaming.py` for the mapping). This is a deliberate,
+documented deviation from the reference encoder, not an accident.
 
 ### A2UI research note (frontend-a2ui-developer, 2026-08-31)
 

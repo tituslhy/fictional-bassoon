@@ -18,10 +18,17 @@ trusting it.
 
 ## Backend AG-UI wiring — owner: `backend-agui-developer`
 
-- [ ] AG-UI package/version pinned (`protocol-version-pinning.md`)
-- [ ] Event mapping implemented in `backend/utils/streaming.py`
-- [ ] `worker_runner.py` / `main.py` `/chat` handling updated to publish AG-UI events
-- [ ] `frontend/src/types/index.ts`'s `SSEEventType` union updated to match
+- [~] AG-UI package/version pinned (`protocol-version-pinning.md`) — `ag-ui-protocol==0.1.21` added via `uv add`, pin recorded. Self-reported; not yet independently verified.
+- [~] Event mapping implemented in `backend/utils/streaming.py` — legacy dict vocabulary replaced with AG-UI `EventType` events (RUN_STARTED/FINISHED/ERROR, STEP_STARTED/FINISHED, TEXT_MESSAGE_*, REASONING_MESSAGE_*, TOOL_CALL_*). Self-reported; not yet independently verified.
+- [~] `worker_runner.py` / `main.py` `/chat` handling updated to publish AG-UI events — error/done paths now publish RUN_ERROR / RUN_FINISHED. Self-reported; not yet independently verified.
+- [~] `frontend/src/types/index.ts`'s `SSEEventType` union updated to match — AG-UI union added as `AGUIEventType`. At merge time the legacy vocabulary was kept alongside it as a clearly-marked transitional `LegacySSEEventType` (with `SSEEventType` the union of both), because `Chat.tsx` / `useSSEStream.ts` still consume legacy names via the a2ui mock shim — deleting it is part of the frontend consumption swap below.
+
+**Open integration task (serial join point, now unblocked):** the backend
+emits only AG-UI events, but the frontend still parses/consumes the legacy
+vocabulary through `lib/a2ui/mock/legacyShim.ts`. The swap plan is
+documented in that file; doing it deletes `LegacySSEEventType` and wires
+`useSSEStream.ts`/`Chat.tsx` to the real AG-UI events end-to-end. Until it
+lands, live chat streaming is broken end-to-end on this branch.
 
 ## Frontend A2UI rendering — owner: `frontend-a2ui-developer`
 
@@ -106,3 +113,5 @@ Blocked until the testing gate above is `[x]`.
 <!-- planner appends a dated one-line entry here each time it reconciles this file -->
 - 2026-08-31 — planner reconciled against repo state on `feature/refactor`: removed accidental wholesale duplication of the file's contents; verified all implementation checkboxes are correctly `[ ]` (no AG-UI/A2UI/A2A deps in `pyproject.toml`/`package.json`, no `backend/src/protocol/`, no `frontend/src/lib/a2ui/`, no router in `main.py`, `streaming.py`/`SSEEventType` still legacy vocabulary); marked frontend coverage tooling `[~]` (`@vitest/coverage-v8` present, `test:coverage` script absent); corrected rule-file count seven → ten.
 - 2026-08-31 (second reconciliation) — planner re-verified every item against the repo: no drift since the entry above. Confirmed `protocol-version-pinning.md` version-log table is still all `_tbd_` (no pins), `worker_runner.py` still publishes legacy `error`/`done` dicts, `frontend/src/lib/` doesn't exist at all, `ReasoningBlock`/`ToolCallBlock`/`AnswerBlock` live inline in `StreamingRenderer.tsx` (not separate files — checklist wording kept, noted here), and `backend/main.py` has no `include_router`/JSON-RPC/Agent Card surface. No status changes needed; file was already accurate.
+- 2026-08-31 (backend-agui-developer, ported from worktree `agent-af282a7a3f657d273` at merge) — implemented AG-UI event bridge: pinned `ag-ui-protocol==0.1.21`, rewrote `backend/utils/streaming.py`, `backend/src/worker/worker_runner.py`, `backend/main.py` `/chat` SSE emission, and the frontend `SSEEventType`. Verification in the worktree: `ruff`/`mypy` clean on every touched file (0 new findings vs baseline); `pytest -q` 36 passed, 2 failed — both failures (`tests/test_streaming.py::test_stream_agent_events_basic`/`_error`) are **pre-existing and unrelated**: installed `langfuse==4.5.1`'s `CallbackHandler.__init__()` no longer accepts the `langfuse=`/`trace_name=`/`session_id=`/`metadata=` kwargs used by the unchanged langfuse wiring (confirmed via `inspect.signature`; identical failure on untouched checkout). This blocks any exercise of `stream_agent_events()` in tests — needs a langfuse pin/upgrade decision or a test-side `CallbackHandler` mock; flagged for `unit-tester`/`planner`, deliberately not fixed as part of the AG-UI bridge. Updated 4 backend test files to the AG-UI vocabulary (spot-check coverage only). Also stale and needing a follow-up: `.claude/rules/streaming-patterns.md`'s emitted-event list and root `CLAUDE.md`'s "SSE event types" section still document the legacy vocabulary.
+- 2026-08-31 (main session, merge) — merged worktree `agent-af282a7a3f657d273` into `feature/refactor` after committing the frontend A2UI pass. One conflict (`frontend/src/types/index.ts`) resolved by adopting the AG-UI union plus a transitional `LegacySSEEventType` (see backend section note). The worktree's recreated copies of this file and the rule files were NOT merged; their content was ported into the canonical files by hand (AG-UI pin note → `protocol-version-pinning.md`, these log entries → here). Also fixed three pre-existing frontend `tsc` errors in test fixtures that were blocking the pre-commit type-check gate.
