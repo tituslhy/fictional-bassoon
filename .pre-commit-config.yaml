@@ -1,3 +1,6 @@
+# Exclude Claude Code configuration from all pre-commit hooks
+exclude: ^(\.claude/|CLAUDE\.md$)
+
 repos:
   # Python: Ruff (linting + formatting)
   - repo: https://github.com/astral-sh/ruff-pre-commit

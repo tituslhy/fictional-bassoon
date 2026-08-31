@@ -10,8 +10,22 @@
       "Bash(rm -rf:*)"
     ]
   },
-  "enabledPlugins": {
-    "code-review@claude-plugins-official": true,
-    "coderabbit@claude-plugins-official": true
+  "hooks": {
+    "SubagentStart": [
+      {
+        "matcher": "^(backend-agui-developer|frontend-a2ui-developer|a2a-integrator|unit-tester|protocol-reviewer)$",
+        "hooks": [
+          { "type": "command", "command": "./.claude/hooks/snapshot-git-state.sh" }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "^(backend-agui-developer|frontend-a2ui-developer|a2a-integrator|unit-tester|protocol-reviewer)$",
+        "hooks": [
+          { "type": "command", "command": "./.claude/hooks/require-checklist-update.sh" }
+        ]
+      }
+    ]
   }
 }

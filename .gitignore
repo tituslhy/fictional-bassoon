@@ -7,3 +7,5 @@
 .scannerwork/
 .ruff_cache/
 .serena/
+graphify-out/
+.claude/worktrees/
