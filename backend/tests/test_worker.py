@@ -1,46 +1,57 @@
-import pytest
 import asyncio
-from unittest.mock import AsyncMock, patch, MagicMock, ANY
-from src.worker.worker_runner import run_agent_and_stream
-from src.worker.tasks import run_agent_task
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
+
+import pytest
+
 from src.models.chat_models import ChatRequest
+from src.worker.tasks import run_agent_task
+from src.worker.worker_runner import run_agent_and_stream
+
 
 @pytest.mark.asyncio
 async def test_run_agent_and_stream():
     request = ChatRequest(message="test", thread_id="t1", job_id="j1")
-    
-    # Mock stream_agent_events to yield a few test events
+
+    # Mock stream_agent_events to yield a few test events (AG-UI vocabulary —
+    # run_agent_and_stream just relays whatever stream_agent_events yields,
+    # so the exact event names here aren't load-bearing beyond looking real).
     mock_events = [
-        {"event": "answer", "data": "hello"},
-        {"event": "done", "data": ""}
+        {
+            "event": "TEXT_MESSAGE_CONTENT",
+            "data": '{"type":"TEXT_MESSAGE_CONTENT","messageId":"m1","delta":"hello"}',
+        },
+        {"event": "RUN_FINISHED", "data": '{"type":"RUN_FINISHED","threadId":"t1","runId":"j1"}'},
     ]
-    
+
     async def mock_stream(*args, **kwargs):
         for e in mock_events:
             yield e
 
-    with patch("src.worker.worker_runner.stream_agent_events", side_effect=mock_stream) as mock_stream_func, \
-         patch("src.worker.worker_runner.publish_event", new_callable=AsyncMock) as mock_publish, \
-         patch("src.worker.worker_runner.get_agent") as mock_get_agent, \
-         patch("src.worker.worker_runner.get_redis_connection") as mock_get_conn:
-        
+    with (
+        patch("src.worker.worker_runner.stream_agent_events", side_effect=mock_stream),
+        patch("src.worker.worker_runner.publish_event", new_callable=AsyncMock) as mock_publish,
+        patch("src.worker.worker_runner.get_agent") as mock_get_agent,
+        patch("src.worker.worker_runner.get_redis_connection") as mock_get_conn,
+    ):
         mock_get_agent.return_value = MagicMock()
         mock_redis = MagicMock()
         mock_get_conn.return_value.__aenter__.return_value = mock_redis
-        
+
         await run_agent_and_stream(request)
-        
+
         assert mock_publish.call_count == 2
         # Use ANY for the client argument as it's the mock_redis
         mock_publish.assert_any_call("j1", mock_events[0], client=ANY)
         mock_publish.assert_any_call("j1", mock_events[1], client=ANY)
 
+
 def test_run_agent_task():
     request_dict = {"message": "test", "thread_id": "t1", "job_id": "j1"}
 
-    with patch("src.worker.tasks.run_agent_and_stream", new_callable=AsyncMock) as mock_runner, \
-         patch("src.worker.tasks._run_coroutine_sync") as mock_sync_runner:
-
+    with (
+        patch("src.worker.tasks.run_agent_and_stream", new_callable=AsyncMock) as mock_runner,
+        patch("src.worker.tasks._run_coroutine_sync") as mock_sync_runner,
+    ):
         run_agent_task(request_dict)
 
         # Verify it created a ChatRequest and passed it to run_agent_and_stream
