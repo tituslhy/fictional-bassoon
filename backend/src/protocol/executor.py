@@ -5,7 +5,10 @@ Per ``.claude/skills/a2a-service-packaging/SKILL.md``:
 - ``submitted`` -> the point ``run_agent_task.delay()`` is called
 - ``working``   -> events are flowing through the existing Redis pub/sub
   ``stream:{job_id}`` channel
-- ``completed`` / ``failed`` -> the existing ``done`` / ``error`` events
+- ``completed`` / ``failed`` -> the AG-UI ``RUN_FINISHED`` / ``RUN_ERROR``
+  terminal events (see ``utils/streaming.py``; the legacy ``done`` /
+  ``error`` vocabulary this originally targeted was replaced by the AG-UI
+  bridge)
 
 Per ``.claude/rules/citus-thread-id-integrity.md``, the A2A ``taskId`` /
 ``contextId`` must resolve to the existing ``thread_id`` / ``job_id`` pair —
@@ -141,23 +144,28 @@ class ChatAgentExecutor(AgentExecutor):
                     )
                     working_announced = True
 
-                if event_type == "answer":
-                    answer_parts.append(event.get("data", ""))
-                elif event_type == "error":
-                    error_text = event.get("data") or "agent error"
-                elif event_type == "done":
+                # "data" carries the full AG-UI event as a JSON string (see
+                # utils/streaming.py's envelope) — parse it for the payload.
+                if event_type == "TEXT_MESSAGE_CONTENT":
+                    payload = json.loads(event.get("data") or "{}")
+                    answer_parts.append(payload.get("delta", ""))
+                elif event_type == "RUN_ERROR":
+                    payload = json.loads(event.get("data") or "{}")
+                    error_text = payload.get("message") or "agent error"
+                    break
+                elif event_type == "RUN_FINISHED":
                     break
         finally:
             await pubsub.unsubscribe(f"stream:{task_id}")
             await pubsub.close()
 
         if error_text:
-            # failed: maps from the existing 'error' event.
+            # failed: maps from the AG-UI RUN_ERROR terminal event.
             await event_queue.enqueue_event(
                 _status_event(task_id, thread_id, TaskState.TASK_STATE_FAILED, text=error_text)
             )
         else:
-            # completed: maps from the existing 'done' event (with no error seen).
+            # completed: maps from the AG-UI RUN_FINISHED terminal event.
             await event_queue.enqueue_event(
                 _status_event(
                     task_id,
