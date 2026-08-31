@@ -38,7 +38,7 @@ last twelve months.
 |---|---|---|---|
 | AG-UI | `ag-ui-protocol` | `0.1.21` | 2026-08-31 |
 | A2UI | _no package installed — spec-only, see note below_ | spec v1.0 (`@a2ui/web_core@0.10.6`'s `src/v1_0/schemas/*.json`, `$id: https://a2ui.org/specification/v1_0/...`) | 2026-08-31 |
-| A2A | _tbd_ | _tbd_ | _tbd_ |
+| A2A | `a2a-sdk[fastapi]` (from `a2aproject/a2a-python`) | `1.1.2` | 2026-08-31 |
 
 ### AG-UI pin note (backend-agui-developer, 2026-08-31; ported from its worktree at merge)
 
@@ -112,3 +112,33 @@ either (frontend doesn't consume it directly; SSE frames are hand-parsed
 per `sse-transport-lock.md`), and its version is not "pinned" here since
 pinning AG-UI's actual backend dependency is `backend-agui-developer`'s
 task, not this one.
+
+### A2A verification notes (a2a-integrator, 2026-08-31)
+
+- Verified via PyPI JSON API (`pypi.org/pypi/a2a-sdk/json`): `1.1.2` is the
+  latest version actually published to PyPI (uploaded 2026-07-20). A `1.1.3`
+  tag exists in the `a2aproject/a2a-python` GitHub changelog (2026-08-18) but
+  had not been released to PyPI as of pinning — pinned the latest
+  **released** version, not the latest tag.
+- **Material spec change vs. prior A2A knowledge (protocol v0.3 → v1.0):**
+  the installed SDK's primary types (`a2a.types.a2a_pb2`) are now
+  **protobuf-generated**, and JSON-RPC method names moved from the old
+  slash-style (`message/send`, `tasks/get`, `tasks/cancel`) to gRPC-service-style
+  PascalCase names (`SendMessage`, `SendStreamingMessage`, `GetTask`,
+  `CancelTask`, `ListTasks`, `CreateTaskPushNotificationConfig`, etc.) — see
+  `a2a/server/routes/jsonrpc_dispatcher.py`'s `METHOD_TO_MODEL` mapping. The
+  Agent Card schema also changed: there is no top-level `url` field anymore;
+  it's `supported_interfaces: list[AgentInterface]` (`url`,
+  `protocol_binding`, `tenant`, `protocol_version`) plus a
+  `capabilities.extended_agent_card` field that didn't exist in v0.3.
+  `a2a.compat.v0_3` exists specifically as an opt-in backward-compat adapter
+  for agents still speaking the old wire format
+  (`DefaultRequestHandler`/`create_jsonrpc_routes(..., enable_v0_3_compat=True)`).
+  This confirms the "material spec change in the last 12 months" this rule
+  warns about — training-data recall of A2A method names as `message/send`
+  etc. is stale for this pinned version.
+- `a2a-sdk[fastapi]` (not bare `a2a-sdk`) is required — the bare package's
+  `create_jsonrpc_routes`/`add_a2a_routes_to_fastapi` raise `ImportError` at
+  call time without the `fastapi` extra, because `sse-starlette` (needed for
+  the JSON-RPC streaming methods) is not a base dependency, only pulled in by
+  the `http-server`/`fastapi` extras.

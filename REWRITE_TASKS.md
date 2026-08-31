@@ -79,9 +79,32 @@ events per the swap note in `lib/a2ui/mock/legacyShim.ts`.
 
 ## A2A service packaging — owner: `a2a-integrator`
 
-- [ ] Agent Card authored and schema-validated
-- [ ] JSON-RPC router mounted on `backend/main.py`
-- [ ] Task-state mapping (`submitted`/`working`/`completed`/`failed`) implemented
+- [~] Agent Card authored and schema-validated — `backend/src/protocol/agent_card.py`;
+  validated by round-tripping through the pinned SDK's protobuf JSON schema
+  (`google.protobuf.json_format.ParseDict`/`MessageToDict`) and served at
+  `/.well-known/agent-card.json`, confirmed via `TestClient`. Marked `[~]`
+  rather than `[x]` per the status legend — not yet independently verified
+  by `protocol-reviewer`.
+- [~] JSON-RPC router mounted on `backend/main.py` — `backend/src/protocol/router.py`
+  (`build_a2a_router() -> APIRouter`), mounted via `app.include_router(...)`
+  at `POST /a2a`. Verified end-to-end with `TestClient` (`SendMessage`,
+  `GetTask`, `CancelTask` against a mocked Redis pub/sub + Celery `.delay`).
+  Same `[~]` caveat as above.
+- [~] Task-state mapping (`submitted`/`working`/`completed`/`failed`) implemented —
+  `backend/src/protocol/executor.py`'s `ChatAgentExecutor`. A2A `taskId` ==
+  existing `job_id`, A2A `contextId` == existing `thread_id` (literal
+  identity, not a lookup table — see `citus-thread-id-integrity.md`).
+  **Known limitations, flagged rather than silently resolved:**
+  - `cancel()` raises `UnsupportedOperationError` — real cancellation would
+    need a job_id → Celery `AsyncResult` id mapping that doesn't exist
+    today; adding one is a `legacy-stack-freeze.md` scope-boundary call, not
+    something to add inline.
+  - Task state is held in the SDK's `InMemoryTaskStore` — process-local,
+    lost on restart, not shared across backend replicas. No new Redis/DB
+    structure was added to fix this (also a `legacy-stack-freeze.md` call).
+  - Push notifications and the A2A `0.3` protocol compat mode are not
+    enabled — not part of "chat plus Tavily search," so left off per the
+    Agent Card honesty requirement.
 
 **Known collision:** `backend-agui-developer` and `a2a-integrator` both touch
 `backend/main.py` — both run with `isolation: worktree`. If both are
@@ -115,3 +138,4 @@ Blocked until the testing gate above is `[x]`.
 - 2026-08-31 (second reconciliation) — planner re-verified every item against the repo: no drift since the entry above. Confirmed `protocol-version-pinning.md` version-log table is still all `_tbd_` (no pins), `worker_runner.py` still publishes legacy `error`/`done` dicts, `frontend/src/lib/` doesn't exist at all, `ReasoningBlock`/`ToolCallBlock`/`AnswerBlock` live inline in `StreamingRenderer.tsx` (not separate files — checklist wording kept, noted here), and `backend/main.py` has no `include_router`/JSON-RPC/Agent Card surface. No status changes needed; file was already accurate.
 - 2026-08-31 (backend-agui-developer, ported from worktree `agent-af282a7a3f657d273` at merge) — implemented AG-UI event bridge: pinned `ag-ui-protocol==0.1.21`, rewrote `backend/utils/streaming.py`, `backend/src/worker/worker_runner.py`, `backend/main.py` `/chat` SSE emission, and the frontend `SSEEventType`. Verification in the worktree: `ruff`/`mypy` clean on every touched file (0 new findings vs baseline); `pytest -q` 36 passed, 2 failed — both failures (`tests/test_streaming.py::test_stream_agent_events_basic`/`_error`) are **pre-existing and unrelated**: installed `langfuse==4.5.1`'s `CallbackHandler.__init__()` no longer accepts the `langfuse=`/`trace_name=`/`session_id=`/`metadata=` kwargs used by the unchanged langfuse wiring (confirmed via `inspect.signature`; identical failure on untouched checkout). This blocks any exercise of `stream_agent_events()` in tests — needs a langfuse pin/upgrade decision or a test-side `CallbackHandler` mock; flagged for `unit-tester`/`planner`, deliberately not fixed as part of the AG-UI bridge. Updated 4 backend test files to the AG-UI vocabulary (spot-check coverage only). Also stale and needing a follow-up: `.claude/rules/streaming-patterns.md`'s emitted-event list and root `CLAUDE.md`'s "SSE event types" section still document the legacy vocabulary.
 - 2026-08-31 (main session, merge) — merged worktree `agent-af282a7a3f657d273` into `feature/refactor` after committing the frontend A2UI pass. One conflict (`frontend/src/types/index.ts`) resolved by adopting the AG-UI union plus a transitional `LegacySSEEventType` (see backend section note). The worktree's recreated copies of this file and the rule files were NOT merged; their content was ported into the canonical files by hand (AG-UI pin note → `protocol-version-pinning.md`, these log entries → here). Also fixed three pre-existing frontend `tsc` errors in test fixtures that were blocking the pre-commit type-check gate.
+- 2026-08-31 — `a2a-integrator`: pinned `a2a-sdk[fastapi]==1.1.2` (see `protocol-version-pinning.md` for the v0.3→v1.0 method-name/schema mismatch found and flagged during verification); added `backend/src/protocol/` (`agent_card.py`, `executor.py`, `router.py`); mounted `POST /a2a` + `GET /.well-known/agent-card.json` on `backend/main.py` via `include_router` (2 lines added: one import, one mount call — auth handlers untouched); implemented `submitted`/`working`/`completed`/`failed` mapping onto the existing Celery/Redis pipeline with `taskId`==`job_id`/`contextId`==`thread_id` identity. Marked the three A2A checklist items `[~]` (self-verified, not yet independently checked by `protocol-reviewer`) with limitations called out inline (no cancel, in-memory task store only). `ruff check`/`ruff format` clean on new files; `mypy` clean on new files (7 pre-existing unrelated errors remain elsewhere); `pytest` 36 passed / 2 pre-existing failures unrelated to this change (`utils/streaming.py`'s Langfuse `CallbackHandler` signature mismatch, confirmed present before this change via `git stash`).
