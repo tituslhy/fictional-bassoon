@@ -17,6 +17,7 @@ from src.db import close_db_pool, get_db_pool
 from src.db_bootstrap import ensure_api_schema
 from src.models.auth_models import LoginRequest, SignupRequest, TokenResponse
 from src.models.chat_models import ChatRequest, HealthResponse
+from src.protocol.router import build_a2a_router
 from src.queue.redis_pubsub import redis_client, subscribe
 from src.worker.tasks import run_agent_task
 
@@ -47,6 +48,9 @@ app.add_middleware(
 
 # Instrument FastAPI with Prometheus
 Instrumentator().instrument(app).expose(app)
+
+# A2A protocol surface (Agent Card + JSON-RPC) — see src/protocol/.
+app.include_router(build_a2a_router())
 
 
 @app.post("/auth/signup", response_model=TokenResponse)
