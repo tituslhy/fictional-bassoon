@@ -32,8 +32,11 @@ export interface Thread {
 }
 
 // AG-UI protocol event types (ag-ui-protocol==0.1.21 EventType enum — see
-// .claude/rules/protocol-version-pinning.md). This union replaces the legacy
-// reasoning/tool_call/tool_result/answer/agent/error/done vocabulary.
+// .claude/rules/protocol-version-pinning.md). This is the vocabulary the
+// backend emits on /chat's SSE stream (backend/utils/streaming.py) and the
+// only vocabulary the frontend consumes — the legacy pre-AG-UI vocabulary
+// (reasoning/tool_call/tool_result/answer/agent/error/done) has been fully
+// retired from the frontend.
 export type AGUIEventType =
   | 'RUN_STARTED'
   | 'RUN_FINISHED'
@@ -54,21 +57,7 @@ export type AGUIEventType =
   | 'TOOL_CALL_CHUNK'
   | 'TOOL_CALL_RESULT';
 
-// TRANSITIONAL: the backend now emits only AG-UI events, but Chat.tsx /
-// useSSEStream.ts still consume the legacy vocabulary via the a2ui mock
-// shim. SSEEventType stays a union of both until the frontend consumption
-// swap lands (tracked in REWRITE_TASKS.md — see lib/a2ui/mock/legacyShim.ts
-// for the swap plan). Delete LegacySSEEventType with that swap.
-export type LegacySSEEventType =
-  | 'agent'
-  | 'reasoning'
-  | 'answer'
-  | 'tool_call'
-  | 'tool_result'
-  | 'error'
-  | 'done';
-
-export type SSEEventType = AGUIEventType | LegacySSEEventType;
+export type SSEEventType = AGUIEventType;
 
 export interface SSEEvent {
   event: SSEEventType;

@@ -3,8 +3,8 @@ import type { A2UIComponentNode } from '../schema';
 /**
  * Minimal shape this builder needs from a chat message's aggregated
  * streaming state. Intentionally not importing `ToolCall`/`ThreadMessage`
- * from `@/types` here — this builder is meant to also back the
- * mock-event-driven path in `lib/a2ui/mock/`, which accumulates its own
+ * from `@/types` here — this builder is meant to also back the real
+ * AG-UI-event-driven path in `lib/a2ui/agui/`, which accumulates its own
  * local state rather than the legacy `ThreadMessage` shape.
  */
 export interface LegacyStreamInput {
@@ -21,7 +21,7 @@ export interface LegacyStreamInput {
  *
  *   - `StreamingRenderer.tsx`, which still receives this shape as props
  *     from `MessageBubble.tsx` (unchanged external contract), and
- *   - `lib/a2ui/mock/streamState.ts`, which reduces mocked AG-UI events
+ *   - `lib/a2ui/agui/streamState.ts`, which reduces real AG-UI events
  *     into this same shape before handing off to this function.
  *
  * Keeping one builder for both proves the A2UI tree is the actual stable

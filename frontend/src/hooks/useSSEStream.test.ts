@@ -19,11 +19,15 @@ describe('useSSEStream', () => {
             .fn()
             .mockResolvedValueOnce({
               done: false,
-              value: new TextEncoder().encode('event: answer\ndata: Hello\n\n'),
+              value: new TextEncoder().encode(
+                'event: TEXT_MESSAGE_CONTENT\ndata: {"delta":"Hello"}\n\n'
+              ),
             })
             .mockResolvedValueOnce({
               done: false,
-              value: new TextEncoder().encode('event: done\ndata: \n\n'),
+              value: new TextEncoder().encode(
+                'event: RUN_FINISHED\ndata: {"threadId":"t1","runId":"r1"}\n\n'
+              ),
             })
             .mockResolvedValueOnce({ done: true }),
           releaseLock: vi.fn(),
@@ -40,13 +44,54 @@ describe('useSSEStream', () => {
     });
 
     await waitFor(() => {
-      expect(onEvent).toHaveBeenCalledWith({ event: 'answer', data: 'Hello' });
+      expect(onEvent).toHaveBeenCalledWith({
+        event: 'TEXT_MESSAGE_CONTENT',
+        data: '{"delta":"Hello"}',
+      });
     });
 
     await waitFor(() => {
       expect(onComplete).toHaveBeenCalled();
     });
 
+    expect(result.current.isStreaming).toBe(false);
+  });
+
+  it('should terminate the stream on RUN_ERROR (not just RUN_FINISHED)', async () => {
+    const onEvent = vi.fn();
+    const onComplete = vi.fn();
+
+    const mockResponse = {
+      ok: true,
+      body: {
+        getReader: () => ({
+          read: vi
+            .fn()
+            .mockResolvedValueOnce({
+              done: false,
+              value: new TextEncoder().encode('event: RUN_ERROR\ndata: {"message":"boom"}\n\n'),
+            })
+            .mockResolvedValueOnce({ done: true }),
+          releaseLock: vi.fn(),
+        }),
+      },
+    };
+
+    global.fetch = vi.fn().mockResolvedValue(mockResponse);
+
+    const { result } = renderHook(() => useSSEStream({ onEvent, onComplete }));
+
+    await act(async () => {
+      result.current.start({ message: 'test', thread_id: '1' });
+    });
+
+    await waitFor(() => {
+      expect(onEvent).toHaveBeenCalledWith({ event: 'RUN_ERROR', data: '{"message":"boom"}' });
+    });
+
+    await waitFor(() => {
+      expect(onComplete).toHaveBeenCalled();
+    });
     expect(result.current.isStreaming).toBe(false);
   });
 
@@ -89,7 +134,7 @@ describe('useSSEStream', () => {
     expect(result.current.isStreaming).toBe(false);
   });
 
-  it('should handle stream ending without done event', async () => {
+  it('should handle stream ending without a terminal event', async () => {
     const onComplete = vi.fn();
     const mockResponse = {
       ok: true,
@@ -99,7 +144,9 @@ describe('useSSEStream', () => {
             .fn()
             .mockResolvedValueOnce({
               done: false,
-              value: new TextEncoder().encode('event: answer\ndata: partial\n\n'),
+              value: new TextEncoder().encode(
+                'event: TEXT_MESSAGE_CONTENT\ndata: {"delta":"partial"}\n\n'
+              ),
             })
             .mockResolvedValueOnce({ done: true }),
           releaseLock: vi.fn(),
@@ -132,7 +179,7 @@ describe('useSSEStream', () => {
             .mockResolvedValueOnce({
               done: false,
               value: new TextEncoder().encode(
-                'event: answer\ndata: line 1\ndata: line 2\n\nevent: done\ndata: \n\n'
+                'event: TEXT_MESSAGE_CONTENT\ndata: line 1\ndata: line 2\n\nevent: RUN_FINISHED\ndata: {}\n\n'
               ),
             })
             .mockResolvedValueOnce({ done: true }),
@@ -151,7 +198,10 @@ describe('useSSEStream', () => {
     });
 
     await waitFor(() => {
-      expect(onEvent).toHaveBeenCalledWith({ event: 'answer', data: 'line 1\nline 2' });
+      expect(onEvent).toHaveBeenCalledWith({
+        event: 'TEXT_MESSAGE_CONTENT',
+        data: 'line 1\nline 2',
+      });
     });
   });
 
@@ -165,11 +215,11 @@ describe('useSSEStream', () => {
             .fn()
             .mockResolvedValueOnce({
               done: false,
-              value: new TextEncoder().encode('event: reasoning\n\n'),
+              value: new TextEncoder().encode('event: REASONING_MESSAGE_CONTENT\n\n'),
             })
             .mockResolvedValueOnce({
               done: false,
-              value: new TextEncoder().encode('event: done\ndata: \n\n'),
+              value: new TextEncoder().encode('event: RUN_FINISHED\ndata: {}\n\n'),
             })
             .mockResolvedValueOnce({ done: true }),
           releaseLock: vi.fn(),
@@ -188,7 +238,10 @@ describe('useSSEStream', () => {
       expect(result.current.isStreaming).toBe(false);
     });
     // onEvent should not have been called for the empty chunk
-    expect(onEvent).not.toHaveBeenCalledWith({ event: 'reasoning', data: expect.any(String) });
+    expect(onEvent).not.toHaveBeenCalledWith({
+      event: 'REASONING_MESSAGE_CONTENT',
+      data: expect.any(String),
+    });
   });
 
   it('should handle SSE data without space', async () => {
@@ -202,7 +255,7 @@ describe('useSSEStream', () => {
             .mockResolvedValueOnce({
               done: false,
               value: new TextEncoder().encode(
-                'event: answer\ndata:nospace\n\nevent: done\ndata: \n\n'
+                'event: TEXT_MESSAGE_CONTENT\ndata:nospace\n\nevent: RUN_FINISHED\ndata: {}\n\n'
               ),
             })
             .mockResolvedValueOnce({ done: true }),
@@ -219,8 +272,84 @@ describe('useSSEStream', () => {
     });
 
     await waitFor(() => {
-      expect(onEvent).toHaveBeenCalledWith({ event: 'answer', data: 'nospace' });
+      expect(onEvent).toHaveBeenCalledWith({ event: 'TEXT_MESSAGE_CONTENT', data: 'nospace' });
     });
+  });
+
+  it('should ignore a frame with no event: header', async () => {
+    const onEvent = vi.fn();
+    const mockResponse = {
+      ok: true,
+      body: {
+        getReader: () => ({
+          read: vi
+            .fn()
+            .mockResolvedValueOnce({
+              done: false,
+              value: new TextEncoder().encode('data: orphaned\n\n'),
+            })
+            .mockResolvedValueOnce({
+              done: false,
+              value: new TextEncoder().encode('event: RUN_FINISHED\ndata: {}\n\n'),
+            })
+            .mockResolvedValueOnce({ done: true }),
+          releaseLock: vi.fn(),
+        }),
+      },
+    };
+
+    global.fetch = vi.fn().mockResolvedValue(mockResponse);
+
+    const { result } = renderHook(() => useSSEStream({ onEvent }));
+    await act(async () => {
+      result.current.start({ message: 'test', thread_id: '1' });
+    });
+
+    await waitFor(() => {
+      expect(result.current.isStreaming).toBe(false);
+    });
+    expect(onEvent).not.toHaveBeenCalledWith({ event: expect.anything(), data: 'orphaned' });
+    expect(onEvent).toHaveBeenCalledWith({ event: 'RUN_FINISHED', data: '{}' });
+  });
+
+  it('should build and report an A2UI tree via onA2UITree from real AG-UI events', async () => {
+    const onEvent = vi.fn();
+    const onA2UITree = vi.fn();
+    const mockResponse = {
+      ok: true,
+      body: {
+        getReader: () => ({
+          read: vi
+            .fn()
+            .mockResolvedValueOnce({
+              done: false,
+              value: new TextEncoder().encode(
+                'event: TEXT_MESSAGE_CONTENT\ndata: {"messageId":"m1","delta":"Hi"}\n\n'
+              ),
+            })
+            .mockResolvedValueOnce({
+              done: false,
+              value: new TextEncoder().encode('event: RUN_FINISHED\ndata: {}\n\n'),
+            })
+            .mockResolvedValueOnce({ done: true }),
+          releaseLock: vi.fn(),
+        }),
+      },
+    };
+
+    global.fetch = vi.fn().mockResolvedValue(mockResponse);
+
+    const { result } = renderHook(() => useSSEStream({ onEvent, onA2UITree }));
+    await act(async () => {
+      result.current.start({ message: 'test', thread_id: '1' });
+    });
+
+    await waitFor(() => {
+      expect(onA2UITree).toHaveBeenCalled();
+    });
+
+    const lastCallTree = onA2UITree.mock.calls[onA2UITree.mock.calls.length - 1][0];
+    expect(lastCallTree.component).toBe('column');
   });
 
   it('should handle SSE error', async () => {

@@ -10,6 +10,15 @@ import MessageList from './MessageList';
 import MessageInput from './MessageInput';
 import Sidebar from '@/components/sidebar/Sidebar';
 
+/** Safely parses an AG-UI event's JSON `data` payload; `null` on malformed data. */
+function parseEventData<T>(raw: string): T | null {
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
 export default function Chat() {
   const storeRef = useThreadStore();
   const { activeThreadId } = useThreadsContext();
@@ -26,43 +35,24 @@ export default function Chat() {
       const targetThreadId = streamingTargetThreadIdRef.current;
       if (!targetThreadId) return;
 
-      if (event.event === 'agent') return;
-
-      if (event.event === 'error') {
-        const assistantMsg = currentAssistantRef.current;
-        const errorMessage: ThreadMessage = assistantMsg
-          ? { ...assistantMsg, status: 'done' as const, error: event.data }
-          : {
-              id: crypto.randomUUID(),
-              role: 'assistant' as const,
-              content: '',
-              reasoning: '',
-              toolCalls: [],
-              status: 'done' as const,
-              error: event.data,
-            };
-        currentAssistantRef.current = errorMessage;
-
-        // Mirror to store
-        if (targetThreadId) {
-          const thread = store.threads.find((t: any) => t.id === targetThreadId);
-          if (thread) {
-            const msgs = [...thread.messages];
-            const idx = msgs.findIndex((m: any) => m.id === errorMessage.id);
-            if (idx >= 0) {
-              msgs[idx] = errorMessage;
-            } else {
-              msgs.push(errorMessage);
-            }
-            store.updateThreadMessages(targetThreadId, msgs);
-          }
+      // Writes `msg` into the active thread's message list, creating the
+      // entry if it isn't there yet.
+      const mirror = (msg: ThreadMessage) => {
+        const thread = store.threads.find((t: any) => t.id === targetThreadId);
+        if (!thread) return;
+        const msgs = [...thread.messages];
+        const idx = msgs.findIndex((m: any) => m.id === msg.id);
+        if (idx >= 0) {
+          msgs[idx] = msg;
+        } else {
+          msgs.push(msg);
         }
-        return;
-      }
+        store.updateThreadMessages(targetThreadId, msgs);
+      };
 
-      // Create assistant message if it doesn't exist yet
-      if (!currentAssistantRef.current) {
-        const initialAssistantMsg: ThreadMessage = {
+      const ensureAssistantMessage = (): ThreadMessage => {
+        if (currentAssistantRef.current) return currentAssistantRef.current;
+        const initial: ThreadMessage = {
           id: crypto.randomUUID(),
           role: 'assistant',
           content: '',
@@ -70,205 +60,144 @@ export default function Chat() {
           toolCalls: [],
           status: 'streaming',
         };
-        currentAssistantRef.current = initialAssistantMsg;
+        currentAssistantRef.current = initial;
+        mirror(initial);
+        return initial;
+      };
 
-        // Mirror initial creation to store
-        if (targetThreadId) {
-          const thread = store.threads.find((t: any) => t.id === targetThreadId);
-          if (thread) {
-            store.updateThreadMessages(targetThreadId, [...thread.messages, initialAssistantMsg]);
+      const updateAssistantMessage = (updater: (msg: ThreadMessage) => ThreadMessage) => {
+        const updated = updater(ensureAssistantMessage());
+        currentAssistantRef.current = updated;
+        mirror(updated);
+      };
+
+      // Finalizes the run: writes `finalMsg` into the thread, derives the
+      // thread title from the first user message if this is its first
+      // response, and resets all per-run streaming state. Shared by the
+      // RUN_FINISHED and RUN_ERROR terminal paths.
+      const finalizeRun = (finalMsg: ThreadMessage) => {
+        const thread = store.threads.find((t: any) => t.id === targetThreadId);
+        if (thread) {
+          const msgs = [...thread.messages];
+          const idx = msgs.findIndex((m: any) => m.id === finalMsg.id);
+          if (idx >= 0) {
+            msgs[idx] = finalMsg;
+          } else {
+            msgs.push(finalMsg);
+          }
+          store.updateThreadMessages(thread.id, msgs);
+
+          if (thread.title === 'New Thread') {
+            const firstUser = msgs.find((m: any) => m.role === 'user');
+            if (firstUser) {
+              const title =
+                firstUser.content.slice(0, 40) + (firstUser.content.length > 40 ? '...' : '');
+              store.updateThreadTitle(targetThreadId, title);
+            }
           }
         }
-      }
-
-      const msg = currentAssistantRef.current;
-      if (!msg) return;
+        currentAssistantRef.current = null;
+        isStreamingRef.current = false;
+        streamingTargetThreadIdRef.current = null;
+      };
 
       switch (event.event) {
-        case 'reasoning': {
-          const updatedMsg: ThreadMessage = {
-            ...msg,
-            reasoning: (msg.reasoning || '') + event.data,
-          };
-          currentAssistantRef.current = updatedMsg;
-
-          // Mirror to store
-          if (targetThreadId) {
-            const thread = store.threads.find((t: any) => t.id === targetThreadId);
-            if (thread) {
-              const msgs = [...thread.messages];
-              const idx = msgs.findIndex((m: any) => m.id === updatedMsg.id);
-              if (idx >= 0) {
-                msgs[idx] = updatedMsg;
-                store.updateThreadMessages(targetThreadId, msgs);
-              }
-            }
-          }
-          break;
+        case 'RUN_ERROR': {
+          const data = parseEventData<{ message?: string }>(event.data);
+          const message = data?.message ?? event.data;
+          const assistantMsg = currentAssistantRef.current;
+          const errorMessage: ThreadMessage = assistantMsg
+            ? { ...assistantMsg, status: 'done' as const, error: message }
+            : {
+                id: crypto.randomUUID(),
+                role: 'assistant' as const,
+                content: '',
+                reasoning: '',
+                toolCalls: [],
+                status: 'done' as const,
+                error: message,
+              };
+          finalizeRun(errorMessage);
+          return;
         }
 
-        case 'answer': {
-          const updatedMsg: ThreadMessage = {
-            ...msg,
-            content: msg.content + event.data,
-          };
-          currentAssistantRef.current = updatedMsg;
-
-          // Mirror to store
-          if (targetThreadId) {
-            const thread = store.threads.find((t: any) => t.id === targetThreadId);
-            if (thread) {
-              const msgs = [...thread.messages];
-              const idx = msgs.findIndex((m: any) => m.id === updatedMsg.id);
-              if (idx >= 0) {
-                msgs[idx] = updatedMsg;
-                store.updateThreadMessages(targetThreadId, msgs);
-              }
-            }
-          }
-          break;
-        }
-
-        case 'tool_call': {
-          let parsed: { name?: string; args?: unknown; id?: string; index?: number };
-          try {
-            parsed = JSON.parse(event.data);
-          } catch {
-            // Fallback for non-JSON data
-            const match = event.data.match(/^([^(]+)\(([\s\S]*)\)$/);
-            parsed = match
-              ? { name: match[1], args: match[2] }
-              : { name: 'unknown', args: event.data };
-          }
-
-          // Aggregate tool calls by index or id, using trackingKey for reconciliation
-          const toolCalls = [...(msg.toolCalls || [])];
-          const existingIdx = toolCalls.findIndex(
-            tc =>
-              (parsed.id && tc.id === parsed.id) ||
-              (parsed.id && tc.trackingKey === parsed.id) ||
-              (parsed.index !== undefined && tc.index === parsed.index)
-          );
-
-          if (existingIdx >= 0) {
-            // Update existing tool call
-            const tc = toolCalls[existingIdx];
-            toolCalls[existingIdx] = {
-              ...tc,
-              name: parsed.name || tc.name || 'unknown',
-              args:
-                (tc.args || '') +
-                (typeof parsed.args === 'string' ? parsed.args : JSON.stringify(parsed.args || '')),
-              id: parsed.id || tc.id,
-              index: parsed.index !== undefined ? parsed.index : tc.index,
-            };
+        case 'RUN_FINISHED': {
+          const msg = currentAssistantRef.current;
+          if (msg) {
+            finalizeRun({ ...msg, status: 'done' as const });
           } else {
-            // Create new tool call with tracking key
-            const syntheticId = crypto.randomUUID();
-            toolCalls.push({
-              id: parsed.id || syntheticId,
-              trackingKey: parsed.id || syntheticId,
-              index: parsed.index,
-              name: parsed.name || 'unknown',
-              args:
-                typeof parsed.args === 'string' ? parsed.args : JSON.stringify(parsed.args || ''),
-              expanded: false,
-            });
+            // Run finished without ever producing assistant content —
+            // nothing to write to the thread, just reset streaming state.
+            currentAssistantRef.current = null;
+            isStreamingRef.current = false;
+            streamingTargetThreadIdRef.current = null;
           }
+          return;
+        }
 
-          const updatedMsg: ThreadMessage = {
+        case 'REASONING_MESSAGE_CONTENT': {
+          const data = parseEventData<{ delta?: string }>(event.data);
+          const delta = data?.delta ?? '';
+          updateAssistantMessage(msg => ({ ...msg, reasoning: (msg.reasoning || '') + delta }));
+          return;
+        }
+
+        case 'TEXT_MESSAGE_CONTENT': {
+          const data = parseEventData<{ delta?: string }>(event.data);
+          const delta = data?.delta ?? '';
+          updateAssistantMessage(msg => ({ ...msg, content: msg.content + delta }));
+          return;
+        }
+
+        case 'TOOL_CALL_START': {
+          const data = parseEventData<{ toolCallId?: string; toolCallName?: string }>(event.data);
+          const toolCallId = data?.toolCallId || crypto.randomUUID();
+          const toolCallName = data?.toolCallName || 'unknown';
+          updateAssistantMessage(msg => ({
             ...msg,
-            toolCalls,
-          };
-          currentAssistantRef.current = updatedMsg;
-
-          // Mirror to store
-          if (targetThreadId) {
-            const thread = store.threads.find((t: any) => t.id === targetThreadId);
-            if (thread) {
-              const msgs = [...thread.messages];
-              const idx = msgs.findIndex((m: any) => m.id === updatedMsg.id);
-              if (idx >= 0) {
-                msgs[idx] = updatedMsg;
-                store.updateThreadMessages(targetThreadId, msgs);
-              }
-            }
-          }
-          break;
+            toolCalls: [
+              ...msg.toolCalls,
+              { id: toolCallId, name: toolCallName, args: '', expanded: false },
+            ],
+          }));
+          return;
         }
 
-        case 'tool_result': {
-          let resultData: { data: string; tool_call_id?: string } | string;
-          try {
-            resultData = JSON.parse(event.data);
-          } catch {
-            resultData = event.data;
-          }
-
-          const content = typeof resultData === 'string' ? resultData : resultData.data;
-          const toolCallId = typeof resultData === 'object' ? resultData.tool_call_id : undefined;
-
-          let fallbackApplied = false;
-          const updatedMsg: ThreadMessage = {
+        case 'TOOL_CALL_ARGS': {
+          const data = parseEventData<{ toolCallId?: string; delta?: string }>(event.data);
+          const toolCallId = data?.toolCallId;
+          const delta = data?.delta ?? '';
+          if (!toolCallId) return;
+          updateAssistantMessage(msg => ({
             ...msg,
-            toolCalls: (msg.toolCalls || []).map(tc => {
-              // Match by ID if available, otherwise match the first one without a result
-              if (toolCallId && tc.id === toolCallId) {
-                return { ...tc, result: content };
-              }
-              if (!toolCallId && !tc.result && !fallbackApplied) {
-                fallbackApplied = true;
-                return { ...tc, result: content };
-              }
-              return tc;
-            }),
-          };
-          currentAssistantRef.current = updatedMsg;
-
-          // Mirror to store
-          if (targetThreadId) {
-            const thread = store.threads.find((t: any) => t.id === targetThreadId);
-            if (thread) {
-              const msgs = [...thread.messages];
-              const idx = msgs.findIndex((m: any) => m.id === updatedMsg.id);
-              if (idx >= 0) {
-                msgs[idx] = updatedMsg;
-                store.updateThreadMessages(targetThreadId, msgs);
-              }
-            }
-          }
-          break;
+            toolCalls: msg.toolCalls.map(tc =>
+              tc.id === toolCallId ? { ...tc, args: tc.args + delta } : tc
+            ),
+          }));
+          return;
         }
 
-        case 'done': {
-          if (targetThreadId) {
-            const finalized: ThreadMessage = { ...msg, status: 'done' as const };
-            const thread = store.threads.find((t: any) => t.id === targetThreadId);
-            if (thread) {
-              const msgs = [...thread.messages];
-              const idx = msgs.findIndex((m: any) => m.id === finalized.id);
-              if (idx >= 0) {
-                msgs[idx] = finalized;
-              } else {
-                msgs.push(finalized);
-              }
-              store.updateThreadMessages(thread.id, msgs);
-
-              if (thread.title === 'New Thread') {
-                const firstUser = msgs.find((m: any) => m.role === 'user');
-                if (firstUser) {
-                  const title =
-                    firstUser.content.slice(0, 40) + (firstUser.content.length > 40 ? '...' : '');
-                  store.updateThreadTitle(targetThreadId, title);
-                }
-              }
-            }
-          }
-          currentAssistantRef.current = null;
-          isStreamingRef.current = false;
-          streamingTargetThreadIdRef.current = null;
-          break;
+        case 'TOOL_CALL_RESULT': {
+          const data = parseEventData<{ toolCallId?: string; content?: string }>(event.data);
+          const toolCallId = data?.toolCallId;
+          const content = data?.content ?? '';
+          if (!toolCallId) return;
+          updateAssistantMessage(msg => ({
+            ...msg,
+            toolCalls: msg.toolCalls.map(tc =>
+              tc.id === toolCallId ? { ...tc, result: content } : tc
+            ),
+          }));
+          return;
         }
+
+        // RUN_STARTED, STEP_STARTED/FINISHED, TEXT_MESSAGE_START/END,
+        // REASONING_MESSAGE_START/END, TOOL_CALL_END, and the *_CHUNK
+        // variants (not emitted by this backend today, see
+        // backend/utils/streaming.py) are pure lifecycle/bracket markers —
+        // no ThreadMessage state change needed for this app's rendering.
+        default:
+          return;
       }
     },
     [storeRef]
@@ -279,8 +208,6 @@ export default function Chat() {
     token: token,
     onError: err => {
       const store = storeRef.current;
-      const targetThreadId = window.location.pathname.split('/').pop(); // Or some other way to get the target thread ID reliably if not activeThreadId
-      // Actually streamingTargetThreadIdRef.current is the most reliable
       const reliableTargetThreadId = streamingTargetThreadIdRef.current;
 
       const assistantMsg = currentAssistantRef.current;

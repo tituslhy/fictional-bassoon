@@ -4,12 +4,19 @@ import type { A2UIComponentNode } from '@/lib/a2ui/schema';
 import { validateComponentTree } from '@/lib/a2ui/validator';
 import {
   createEmptyA2UIStreamState,
-  applyMockAGUIEvent,
+  applyAGUIStreamEvent,
   streamStateToA2UITree,
-} from '@/lib/a2ui/mock/streamState';
-import { legacySSEEventToMockAGUIEvent } from '@/lib/a2ui/mock/legacyShim';
+} from '@/lib/a2ui/agui/streamState';
+import { parseAGUIStreamEvent } from '@/lib/a2ui/agui/events';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+/** Terminal AG-UI event types — either one ends the run (never both, see
+ * backend/utils/streaming.py's stream_agent_events docstring). */
+const TERMINAL_EVENTS: ReadonlySet<SSEEventType> = new Set<SSEEventType>([
+  'RUN_FINISHED',
+  'RUN_ERROR',
+]);
 
 interface UseSSEStreamOptions {
   onEvent: (event: SSEEvent) => void;
@@ -17,16 +24,10 @@ interface UseSSEStreamOptions {
   onComplete?: () => void;
   token?: string | null;
   /**
-   * Optional: receives an A2UI component tree rebuilt after each frame.
-   *
-   * This is scaffolding, not the production integration — it runs today's
-   * legacy SSE frames through a TEMPORARY shim
-   * (`lib/a2ui/mock/legacyShim.ts`) into a mocked AG-UI event shape, then
-   * through the same tree builder that will eventually consume real AG-UI
-   * events directly. See that file for exactly what to delete once the
-   * backend's real AG-UI vocabulary lands. The SSE transport itself
-   * (fetch + reader, below) is untouched by any of this —
-   * `sse-transport-lock.md`.
+   * Optional: receives an A2UI component tree rebuilt after each frame,
+   * driven directly by the real AG-UI event stream (`lib/a2ui/agui/`). The
+   * SSE transport itself (fetch + reader, below) is untouched by any of
+   * this — `sse-transport-lock.md`.
    */
   onA2UITree?: (tree: A2UIComponentNode) => void;
 }
@@ -46,8 +47,9 @@ export function useSSEStream(options: UseSSEStreamOptions) {
       abortRef.current = new AbortController();
       setIsStreaming(true);
 
-      // Scaffolding for the A2UI mock event pipeline (see `onA2UITree` doc
-      // comment above) — inert unless a caller passes `onA2UITree`.
+      // Running accumulator for the optional A2UI tree pipeline (see
+      // `onA2UITree` doc comment above) — inert unless a caller passes
+      // `onA2UITree`.
       let a2uiState = createEmptyA2UIStreamState();
 
       const headers: Record<string, string> = {
@@ -80,7 +82,7 @@ export function useSSEStream(options: UseSSEStreamOptions) {
           const reader = res.body.getReader();
           const decoder = new TextDecoder();
           let buffer = '';
-          let receivedDone = false;
+          let receivedTerminalEvent = false;
 
           try {
             while (true) {
@@ -96,10 +98,10 @@ export function useSSEStream(options: UseSSEStreamOptions) {
                 if (!parsed) continue;
                 options.onEvent(parsed);
                 if (options.onA2UITree) {
-                  a2uiState = applyMockA2UIFrame(a2uiState, parsed, options.onA2UITree);
+                  a2uiState = applyA2UIFrame(a2uiState, parsed, options.onA2UITree);
                 }
-                if (parsed.event === 'done') {
-                  receivedDone = true;
+                if (TERMINAL_EVENTS.has(parsed.event)) {
+                  receivedTerminalEvent = true;
                   options.onComplete?.();
                   setIsStreaming(false);
                   return;
@@ -107,8 +109,8 @@ export function useSSEStream(options: UseSSEStreamOptions) {
               }
             }
 
-            // Stream ended without "done" event
-            if (!receivedDone) {
+            // Stream ended without a terminal (RUN_FINISHED/RUN_ERROR) event
+            if (!receivedTerminalEvent) {
               setIsStreaming(false);
               options.onComplete?.();
             }
@@ -131,7 +133,7 @@ export function useSSEStream(options: UseSSEStreamOptions) {
 
 function parseSSE(text: string): SSEEvent | null {
   const lines = text.split('\n');
-  let event: SSEEventType = 'reasoning';
+  let event: SSEEventType | null = null;
   let data = '';
   let hasData = false;
 
@@ -154,31 +156,31 @@ function parseSSE(text: string): SSEEvent | null {
     }
   }
 
-  if (!hasData) return null;
+  if (!hasData || event === null) return null;
   return { event, data };
 }
 
 /**
- * Runs one legacy SSE frame through the temporary mock-AG-UI bridge (see
- * `onA2UITree` doc comment above and `lib/a2ui/mock/legacyShim.ts`),
+ * Runs one real AG-UI SSE frame through `lib/a2ui/agui/events.ts`'s parser,
  * updates the running accumulator, validates the resulting tree, and
- * reports it. Validation failures are logged rather than thrown — a bad
- * A2UI tree here is a scaffolding bug, not a reason to tear down the SSE
- * stream (`sse-transport-lock.md` — the transport keeps running regardless).
+ * reports it. Validation/parse failures are logged rather than thrown — a
+ * bad A2UI tree here is an A2UI-pipeline bug, not a reason to tear down the
+ * SSE stream (`sse-transport-lock.md` — the transport keeps running
+ * regardless).
  */
-function applyMockA2UIFrame(
+function applyA2UIFrame(
   state: ReturnType<typeof createEmptyA2UIStreamState>,
   frame: SSEEvent,
   onA2UITree: (tree: A2UIComponentNode) => void
 ): ReturnType<typeof createEmptyA2UIStreamState> {
-  const mockEvent = legacySSEEventToMockAGUIEvent(frame);
-  if (!mockEvent) return state;
+  const aguiEvent = parseAGUIStreamEvent(frame);
+  if (!aguiEvent) return state;
 
-  const nextState = applyMockAGUIEvent(state, mockEvent);
+  const nextState = applyAGUIStreamEvent(state, aguiEvent);
   try {
     onA2UITree(validateComponentTree(streamStateToA2UITree(nextState)));
   } catch (err) {
-    console.error('A2UI mock tree validation failed', err);
+    console.error('A2UI tree validation failed', err);
   }
   return nextState;
 }

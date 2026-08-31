@@ -1,8 +1,15 @@
 import type { A2UIComponentNode } from '../schema';
 import { buildLegacyStreamTree } from '../builders/legacyStreamTree';
-import type { MockAGUIEvent } from './aguiEvents';
+import type { AGUIStreamEvent } from './events';
 
-/** Accumulator reduced from a sequence of `MockAGUIEvent`s. */
+/**
+ * Accumulator reduced from a sequence of real `AGUIStreamEvent`s.
+ *
+ * This replaces the former `lib/a2ui/mock/streamState.ts` — same reducer
+ * shape, now driven by `parseAGUIStreamEvent` (`./events.ts`) instead of the
+ * temporary `legacySSEEventToMockAGUIEvent` shim, per the swap plan that
+ * used to live in `lib/a2ui/mock/legacyShim.ts` (deleted).
+ */
 export interface A2UIStreamState {
   reasoningText: string;
   answerText: string;
@@ -15,11 +22,13 @@ export function createEmptyA2UIStreamState(): A2UIStreamState {
 }
 
 /**
- * Reduces one mocked AG-UI event into the running stream state. Pure and
- * side-effect free so it's trivial to unit test and trivial to swap for a
- * real-event version later (see `legacyShim.ts`'s swap instructions).
+ * Reduces one real AG-UI event into the running stream state. Pure and
+ * side-effect free so it's trivial to unit test.
  */
-export function applyMockAGUIEvent(state: A2UIStreamState, event: MockAGUIEvent): A2UIStreamState {
+export function applyAGUIStreamEvent(
+  state: A2UIStreamState,
+  event: AGUIStreamEvent
+): A2UIStreamState {
   switch (event.type) {
     case 'RUN_STARTED':
       return { ...state, isStreaming: true };
@@ -59,9 +68,9 @@ export function applyMockAGUIEvent(state: A2UIStreamState, event: MockAGUIEvent)
     case 'RUN_ERROR':
       return { ...state, isStreaming: false };
 
-    // TEXT_MESSAGE_START/END, REASONING_MESSAGE_START/END, TOOL_CALL_END:
-    // pure lifecycle markers, no state change needed for this app's
-    // read-only rendering.
+    // STEP_STARTED/FINISHED, TEXT_MESSAGE_START/END, REASONING_MESSAGE_START/END,
+    // TOOL_CALL_END, and the *_CHUNK variants: pure lifecycle/bracket
+    // markers, no state change needed for this app's read-only rendering.
     default:
       return state;
   }
