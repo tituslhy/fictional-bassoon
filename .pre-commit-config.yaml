@@ -1,5 +1,5 @@
-# Exclude Claude Code configuration from all pre-commit hooks
-exclude: ^(\.claude/|CLAUDE\.md$)
+# Exclude Claude Code / Cursor configuration from all pre-commit hooks
+exclude: ^(\.claude/|\.cursor/|CLAUDE\.md$)
 
 repos:
   # Python: Ruff (linting + formatting)
