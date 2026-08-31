@@ -1,10 +1,10 @@
-"use client";
+'use client';
 
-import { useThreadsContext } from "@/context/ThreadContext";
-import { useAuth } from "@/context/AuthContext";
-import { LogOut, User as UserIcon } from "lucide-react";
-import ThreadItem from "./ThreadItem";
-import NewThreadButton from "./NewThreadButton";
+import { useThreadsContext } from '@/context/ThreadContext';
+import { useAuth } from '@/context/AuthContext';
+import { LogOut, User as UserIcon } from 'lucide-react';
+import ThreadItem from './ThreadItem';
+import NewThreadButton from './NewThreadButton';
 
 export default function Sidebar() {
   const { threads, activeThreadId, setActiveThreadId, createThread, deleteThread } =
@@ -44,7 +44,7 @@ export default function Sidebar() {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-white truncate">
-                  {user.full_name || user.email.split("@")[0]}
+                  {user.full_name || user.email.split('@')[0]}
                 </p>
                 <p className="text-xs text-zinc-500 truncate">{user.email}</p>
               </div>

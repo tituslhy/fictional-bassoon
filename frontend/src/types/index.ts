@@ -16,11 +16,11 @@ export interface ToolCall {
 
 export interface ThreadMessage {
   id: string;
-  role: "user" | "assistant";
+  role: 'user' | 'assistant';
   content: string;
   reasoning?: string;
   toolCalls: ToolCall[];
-  status: "streaming" | "done" | "error";
+  status: 'streaming' | 'done' | 'error';
   error?: string;
 }
 
@@ -32,13 +32,13 @@ export interface Thread {
 }
 
 export type SSEEventType =
-  | "agent"
-  | "reasoning"
-  | "answer"
-  | "tool_call"
-  | "tool_result"
-  | "error"
-  | "done";
+  | 'agent'
+  | 'reasoning'
+  | 'answer'
+  | 'tool_call'
+  | 'tool_result'
+  | 'error'
+  | 'done';
 
 export interface SSEEvent {
   event: SSEEventType;

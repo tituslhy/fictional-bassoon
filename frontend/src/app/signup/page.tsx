@@ -1,13 +1,13 @@
-"use client";
+'use client';
 
-import React, { useState } from "react";
-import Link from "next/link";
-import { useAuth } from "@/context/AuthContext";
+import React, { useState } from 'react';
+import Link from 'next/link';
+import { useAuth } from '@/context/AuthContext';
 
 export default function SignupPage() {
-  const [email, setEmail] = useState("");
-  const [fullName, setFullName] = useState("");
-  const [password, setPassword] = useState("");
+  const [email, setEmail] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [password, setPassword] = useState('');
   const { signup, isLoading, error } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -40,7 +40,7 @@ export default function SignupPage() {
                 className="mt-1 block w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-white placeholder-zinc-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-sm"
                 placeholder="John Doe"
                 value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
+                onChange={e => setFullName(e.target.value)}
               />
             </div>
             <div>
@@ -55,7 +55,7 @@ export default function SignupPage() {
                 className="mt-1 block w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-white placeholder-zinc-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-sm"
                 placeholder="you@example.com"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={e => setEmail(e.target.value)}
               />
             </div>
             <div>
@@ -70,7 +70,7 @@ export default function SignupPage() {
                 className="mt-1 block w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-white placeholder-zinc-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-sm"
                 placeholder="••••••••"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={e => setPassword(e.target.value)}
               />
             </div>
           </div>
@@ -87,7 +87,7 @@ export default function SignupPage() {
               disabled={isLoading}
               className="flex w-full justify-center rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-zinc-900 disabled:opacity-50"
             >
-              {isLoading ? "Creating account..." : "Sign up"}
+              {isLoading ? 'Creating account...' : 'Sign up'}
             </button>
           </div>
         </form>

@@ -7,20 +7,21 @@ Next.js chat application for the fictional-bassoon AI agent.
 This is a real-time chat interface that streams agent reasoning, tool calls, tool results, and final answers via Server-Sent Events (SSE). It includes user authentication, conversation management, and responsive UI.
 
 The frontend consists of three main areas:
+
 1. **Authentication** — Login/Signup forms.
 2. **Sidebar** — List of conversation threads.
 3. **Chat area** — Message list with streaming renderer and user input form.
 
 ## Tech Stack
 
-| Technology | Purpose |
-|---|---|
-| Next.js 14 (App Router) | React framework |
-| TypeScript (strict mode) | Type safety |
-| Tailwind CSS | Utility-first styling |
-| react-markdown + remark-gfm | Markdown content rendering |
-| Lucide React | Icon library |
-| Custom SSE hook | Real-time event consumption |
+| Technology                  | Purpose                     |
+| --------------------------- | --------------------------- |
+| Next.js 14 (App Router)     | React framework             |
+| TypeScript (strict mode)    | Type safety                 |
+| Tailwind CSS                | Utility-first styling       |
+| react-markdown + remark-gfm | Markdown content rendering  |
+| Lucide React                | Icon library                |
+| Custom SSE hook             | Real-time event consumption |
 
 ## Installation
 

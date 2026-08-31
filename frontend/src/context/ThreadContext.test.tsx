@@ -1,40 +1,40 @@
-import { renderHook, act, waitFor } from "@testing-library/react";
-import { ThreadProvider, useThreadsContext, useThreadStore } from "./ThreadContext";
-import { vi, describe, it, expect, beforeEach } from "vitest";
-import React from "react";
+import { renderHook, act, waitFor } from '@testing-library/react';
+import { ThreadProvider, useThreadsContext, useThreadStore } from './ThreadContext';
+import { vi, describe, it, expect, beforeEach } from 'vitest';
+import React from 'react';
 
 // 1. Create a stable mock state to prevent infinite re-renders
 const mockAuth = {
-  token: "mock-token",
-  user: { id: "user-1", email: "test@example.com" },
+  token: 'mock-token',
+  user: { id: 'user-1', email: 'test@example.com' },
   isLoading: false,
 };
 
 const mockAuthEmpty = {
-    token: null,
-    user: null,
-    isLoading: false,
+  token: null,
+  user: null,
+  isLoading: false,
 };
 
-let currentMockAuth = mockAuth;
+let currentMockAuth: typeof mockAuth | typeof mockAuthEmpty = mockAuth;
 
-vi.mock("./AuthContext", () => ({
+vi.mock('./AuthContext', () => ({
   useAuth: () => currentMockAuth,
 }));
 
-describe("ThreadContext", () => {
+describe('ThreadContext', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     currentMockAuth = mockAuth;
     // 2. Default Mock fetch with a stable response
-    global.fetch = vi.fn().mockImplementation((url) => {
-        if (url.includes("/threads") || url.includes("/messages")) {
-            return Promise.resolve({
-                ok: true,
-                json: () => Promise.resolve([]),
-            });
-        }
-        return Promise.resolve({ ok: true });
+    global.fetch = vi.fn().mockImplementation(url => {
+      if (url.includes('/threads') || url.includes('/messages')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve([]),
+        });
+      }
+      return Promise.resolve({ ok: true });
     });
   });
 
@@ -42,12 +42,12 @@ describe("ThreadContext", () => {
     <ThreadProvider>{children}</ThreadProvider>
   );
 
-  it("should create a new thread", async () => {
+  it('should create a new thread', async () => {
     const { result } = renderHook(() => useThreadsContext(), { wrapper });
 
     await waitFor(() => expect(result.current.threads).toEqual([]), { timeout: 2000 });
 
-    let threadId: string = "";
+    let threadId: string = '';
     await act(async () => {
       threadId = await result.current.createThread();
     });
@@ -58,21 +58,21 @@ describe("ThreadContext", () => {
     expect(result.current.activeThreadId).toBe(threadId);
   });
 
-  it("should add a message to a thread", async () => {
+  it('should add a message to a thread', async () => {
     const { result } = renderHook(() => useThreadsContext(), { wrapper });
 
     await waitFor(() => expect(result.current.threads).toEqual([]));
 
-    let threadId: string = "";
+    let threadId: string = '';
     await act(async () => {
       threadId = await result.current.createThread();
     });
 
     const message = {
-      id: "msg-1",
-      role: "user" as const,
-      content: "Hello",
-      status: "done" as const,
+      id: 'msg-1',
+      role: 'user' as const,
+      content: 'Hello',
+      status: 'done' as const,
       toolCalls: [],
     };
 
@@ -81,15 +81,15 @@ describe("ThreadContext", () => {
     });
 
     expect(result.current.threads[0].messages).toHaveLength(1);
-    expect(result.current.threads[0].messages[0].content).toBe("Hello");
+    expect(result.current.threads[0].messages[0].content).toBe('Hello');
   });
 
-  it("should delete a thread", async () => {
+  it('should delete a thread', async () => {
     const { result } = renderHook(() => useThreadsContext(), { wrapper });
 
     await waitFor(() => expect(result.current.threads).toEqual([]));
 
-    let threadId: string = "";
+    let threadId: string = '';
     await act(async () => {
       threadId = await result.current.createThread();
     });
@@ -104,75 +104,87 @@ describe("ThreadContext", () => {
     expect(result.current.activeThreadId).toBeNull();
   });
 
-  it("should update thread title", async () => {
+  it('should update thread title', async () => {
     const { result } = renderHook(() => useThreadsContext(), { wrapper });
     await waitFor(() => expect(result.current.threads).toEqual([]));
 
-    let threadId: string = "";
+    let threadId: string = '';
     await act(async () => {
       threadId = await result.current.createThread();
     });
 
     await act(async () => {
-      await result.current.updateThreadTitle(threadId, "New Title");
+      await result.current.updateThreadTitle(threadId, 'New Title');
     });
 
-    expect(result.current.threads[0].title).toBe("New Title");
+    expect(result.current.threads[0].title).toBe('New Title');
   });
 
-  it("should update thread messages (sync for streaming)", async () => {
+  it('should update thread messages (sync for streaming)', async () => {
     const { result } = renderHook(() => useThreadsContext(), { wrapper });
     await waitFor(() => expect(result.current.threads).toEqual([]));
 
-    let threadId: string = "";
+    let threadId: string = '';
     await act(async () => {
       threadId = await result.current.createThread();
     });
 
     const messages = [
-        { id: "m1", role: "user" as const, content: "hi", status: "done" as const, toolCalls: [] },
-        { id: "m2", role: "assistant" as const, content: "hello...", status: "streaming" as const, toolCalls: [] }
+      { id: 'm1', role: 'user' as const, content: 'hi', status: 'done' as const, toolCalls: [] },
+      {
+        id: 'm2',
+        role: 'assistant' as const,
+        content: 'hello...',
+        status: 'streaming' as const,
+        toolCalls: [],
+      },
     ];
 
     await act(async () => {
-        result.current.updateThreadMessages(threadId, messages);
+      result.current.updateThreadMessages(threadId, messages);
     });
 
     expect(result.current.threads[0].messages).toHaveLength(2);
-    expect(result.current.threads[0].messages[1].status).toBe("streaming");
+    expect(result.current.threads[0].messages[1].status).toBe('streaming');
   });
 
-  it("should upsert finalized message when status is done", async () => {
-    const fetchSpy = vi.spyOn(global, "fetch");
+  it('should upsert finalized message when status is done', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch');
     const { result } = renderHook(() => useThreadsContext(), { wrapper });
     await waitFor(() => expect(result.current.threads).toEqual([]));
 
-    let threadId: string = "";
+    let threadId: string = '';
     await act(async () => {
       threadId = await result.current.createThread();
     });
 
     const messages = [
-        { id: "m1", role: "assistant" as const, content: "Final answer", status: "done" as const, toolCalls: [] }
+      {
+        id: 'm1',
+        role: 'assistant' as const,
+        content: 'Final answer',
+        status: 'done' as const,
+        toolCalls: [],
+      },
     ];
 
     await act(async () => {
-        result.current.updateThreadMessages(threadId, messages);
+      result.current.updateThreadMessages(threadId, messages);
     });
 
     // Should call fetch to upsert the "done" message
     expect(fetchSpy).toHaveBeenCalledWith(
-        expect.stringContaining("/messages"),
-        expect.objectContaining({
-            method: "POST",
-            headers: expect.objectContaining({
-                "Prefer": "resolution=merge-duplicates"
-            })
-        })
+      expect.stringContaining('/messages'),
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          Prefer: 'resolution=merge-duplicates',
+        }),
+      })
     );
   });
 
-  it("should handle unauthenticated state", async () => {
+  it('should handle unauthenticated state', async () => {
     currentMockAuth = mockAuthEmpty;
     const { result } = renderHook(() => useThreadsContext(), { wrapper });
 
@@ -180,13 +192,14 @@ describe("ThreadContext", () => {
     expect(result.current.threads).toHaveLength(0);
   });
 
-  it("should log errors when persistence fails", async () => {
-    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    global.fetch = vi.fn().mockImplementation((url) => {
-        if (url.includes("/threads") && !url.includes("?")) { // POST /threads
-            return Promise.resolve({ ok: false });
-        }
-        return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+  it('should log errors when persistence fails', async () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    global.fetch = vi.fn().mockImplementation(url => {
+      if (url.includes('/threads') && !url.includes('?')) {
+        // POST /threads
+        return Promise.resolve({ ok: false });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
     });
 
     const { result } = renderHook(() => useThreadsContext(), { wrapper });
@@ -196,43 +209,43 @@ describe("ThreadContext", () => {
       await result.current.createThread();
     });
 
-    expect(consoleSpy).toHaveBeenCalledWith("Error persisting thread:", expect.any(Error));
+    expect(consoleSpy).toHaveBeenCalledWith('Error persisting thread:', expect.any(Error));
     consoleSpy.mockRestore();
   });
 
-  it("should fetch existing threads on mount and sort messages", async () => {
+  it('should fetch existing threads on mount and sort messages', async () => {
     const mockThreads = [
       {
-        id: "thread-123",
-        title: "Existing Thread",
+        id: 'thread-123',
+        title: 'Existing Thread',
         updated_at: new Date().toISOString(),
         messages: [
           {
-            id: "msg-2",
-            role: "assistant",
-            content: "World",
-            status: "done",
-            created_at: "2024-01-01T12:00:01Z",
+            id: 'msg-2',
+            role: 'assistant',
+            content: 'World',
+            status: 'done',
+            created_at: '2024-01-01T12:00:01Z',
           },
           {
-            id: "msg-1",
-            role: "user",
-            content: "Hello",
-            status: "done",
-            created_at: "2024-01-01T12:00:00Z",
+            id: 'msg-1',
+            role: 'user',
+            content: 'Hello',
+            status: 'done',
+            created_at: '2024-01-01T12:00:00Z',
           },
         ],
       },
     ];
 
-    global.fetch = vi.fn().mockImplementation((url) => {
-        if (url.includes("/threads")) {
-            return Promise.resolve({
-                ok: true,
-                json: () => Promise.resolve(mockThreads),
-            });
-        }
-        return Promise.resolve({ ok: true });
+    global.fetch = vi.fn().mockImplementation(url => {
+      if (url.includes('/threads')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve(mockThreads),
+        });
+      }
+      return Promise.resolve({ ok: true });
     });
 
     const { result } = renderHook(() => useThreadsContext(), { wrapper });
@@ -241,30 +254,30 @@ describe("ThreadContext", () => {
       expect(result.current.threads).toHaveLength(1);
     });
 
-    expect(result.current.threads[0].messages[0].content).toBe("Hello");
-    expect(result.current.threads[0].messages[1].content).toBe("World");
+    expect(result.current.threads[0].messages[0].content).toBe('Hello');
+    expect(result.current.threads[0].messages[1].content).toBe('World');
   });
 
-  it("should handle fetch errors gracefully", async () => {
-    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    global.fetch = vi.fn().mockRejectedValueOnce(new Error("Network Error"));
+  it('should handle fetch errors gracefully', async () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    global.fetch = vi.fn().mockRejectedValueOnce(new Error('Network Error'));
 
     const { result } = renderHook(() => useThreadsContext(), { wrapper });
 
     // Should still finish loading even if fetch fails
     await waitFor(() => {
-        expect(result.current.threads).toBeDefined();
+      expect(result.current.threads).toBeDefined();
     });
 
-    expect(consoleSpy).toHaveBeenCalledWith("Failed to fetch threads from DB:", expect.any(Error));
+    expect(consoleSpy).toHaveBeenCalledWith('Failed to fetch threads from DB:', expect.any(Error));
     consoleSpy.mockRestore();
   });
 
-  it("should provide a thread store via useThreadStore", async () => {
+  it('should provide a thread store via useThreadStore', async () => {
     const { result } = renderHook(() => useThreadStore(), { wrapper });
-    
+
     await waitFor(() => {
-        expect(result.current.current).toBeDefined();
+      expect(result.current.current).toBeDefined();
     });
 
     expect(result.current.current.threads).toEqual([]);
