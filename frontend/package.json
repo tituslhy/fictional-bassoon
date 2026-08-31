@@ -10,7 +10,8 @@
     "format": "next lint --fix && prettier --write .",
     "type-check": "tsc --noEmit",
     "test": "vitest",
-    "test:ui": "vitest --ui"
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest --coverage"
   },
   "dependencies": {
     "lucide-react": "^1.8.0",

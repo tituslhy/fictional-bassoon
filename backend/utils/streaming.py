@@ -185,7 +185,11 @@ def _handle_message_chunk(token: AIMessageChunk, state: _RunState) -> list[dict]
             if state.reasoning_message_id is None:
                 state.reasoning_message_id = str(uuid.uuid4())
                 events.append(
-                    _to_dict(ReasoningMessageStartEvent(message_id=state.reasoning_message_id))
+                    _to_dict(
+                        ReasoningMessageStartEvent(
+                            message_id=state.reasoning_message_id, role="reasoning"
+                        )
+                    )
                 )
             events.append(
                 _to_dict(
