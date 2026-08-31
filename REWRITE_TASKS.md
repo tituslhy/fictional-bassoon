@@ -134,19 +134,23 @@ Blocked until the three surfaces above are `[x]`.
   src/worker/worker_runner.py 94%, src/queue/redis_pubsub.py 91%.
   Created tests/test_protocol.py (13 tests covering ChatAgentExecutor,
   agent card, router). Fixed langfuse==4.5.1 compatibility in
-  tests/test_streaming.py via mock of CallbackHandler + AG-UI event
-  `ReasoningMessageStartEvent.role` field.
-- [~] Frontend coverage ≥90% — **ACTUAL: 49.73%** (99 tests, 283 stmts, 286 missed).
-  NOT MET — pages (login, signup, root), sidebar components, and several
-  utilities (AuthContext, MessageInput, MessageList, renderer.tsx) have zero
-  coverage. Met task-specific requirements: added Chat.test.tsx (14 tests
-  covering AG-UI event callback integration), validator.test.ts (33 tests,
-  100% of validator logic), allowList.test.ts (9 tests, 100% of allow-list).
-  Per-module breakdown: useSSEStream.ts 97.56%, streamState.ts 100%,
-  ColumnBlock.tsx 100%, events.ts 91.66%, validator.ts covered by tests
-  but not shown in report (not imported by render tree). Reaching 90%
-  overall would require test suites for pages and sidebar, out of scope
-  for the current task
+  tests/test_streaming.py via a test-side mock of CallbackHandler.
+  (The tester's second test-side patch — masking a missing required
+  `role` field on `ReasoningMessageStartEvent` — was removed by the main
+  session: that was a REAL production bug in utils/streaming.py that
+  would have crashed any reasoning stream with a pydantic
+  ValidationError; fixed in production with `role="reasoning"` instead.)
+- [~] Frontend coverage ≥90% — **ACTUAL: 72.69% statements / 75.15% lines**
+  (167 tests, 15 files, all passing; tsc + eslint clean). NOT MET — the
+  tester's second pass (AuthContext, Sidebar, ThreadItem, NewThreadButton,
+  MessageInput, MessageList tests) was stopped mid-run at Titus's request
+  before it could finish closing the gap. First-pass task-specific modules
+  are well covered: useSSEStream.ts 97.56%, streamState 100%, validator
+  (33 tests), allowList (9 tests), Chat.test.tsx (14 tests). Remaining
+  zero/low-coverage areas: src/app/ pages (layout, page, login, signup),
+  renderer.tsx, and parts of ThreadContext. Options for the next session:
+  finish the component suites, and/or exclude ONLY src/app/ pages from the
+  coverage include-set with a documented rationale in vitest.config.ts.
 
 ## Review gate — owner: `protocol-reviewer`
 

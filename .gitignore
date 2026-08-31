@@ -10,3 +10,6 @@
 graphify-out/
 .claude/worktrees/
 .claude/settings.local.json
+
+# local handoff notes
+handoffs/
