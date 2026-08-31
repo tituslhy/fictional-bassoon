@@ -4,7 +4,7 @@ reviews:
   profile: chill
   high_level_summary: true
   path_filters:
-    - "!Claude.md"
+    - "!CLAUDE.md"
     - "!LICENSE"
     - "!.claude/**"
     - "!frontend/.eslintrc.json"
