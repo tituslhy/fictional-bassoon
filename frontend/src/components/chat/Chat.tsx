@@ -22,7 +22,7 @@ function parseEventData<T>(raw: string): T | null {
 
 export default function Chat() {
   const storeRef = useThreadStore();
-  const { activeThreadId, createThread } = useThreadsContext();
+  const { activeThreadId, createThread, threads } = useThreadsContext();
   const { token } = useAuth();
 
   const currentAssistantRef = useRef<ThreadMessage | null>(null);
@@ -208,7 +208,11 @@ export default function Chat() {
     const targetThreadId = streamingTargetThreadIdRef.current;
     const msg = currentAssistantRef.current;
     if (msg && msg.status === 'streaming' && targetThreadId) {
-      const finalMsg: ThreadMessage = { ...msg, status: 'done' };
+      const finalMsg: ThreadMessage = {
+        ...msg,
+        status: 'error',
+        error: msg.error || 'Stream ended unexpectedly',
+      };
       const thread = store.threads.find((t: Thread) => t.id === targetThreadId);
       if (thread) {
         const msgs = [...thread.messages];
@@ -311,7 +315,7 @@ export default function Chat() {
     [activeThreadId, stream, storeRef, createThread]
   );
 
-  const currentThread = storeRef.current.threads.find((t: Thread) => t.id === activeThreadId);
+  const currentThread = threads.find((t: Thread) => t.id === activeThreadId);
   const messages = currentThread?.messages || [];
   const isEmpty = messages.length === 0;
 

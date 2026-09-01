@@ -301,6 +301,66 @@ describe('ThreadContext', () => {
     expect(result.current.threads[0].messages[1].content).toBe('World');
   });
 
+  it('should retry history hydrate when re-selecting a thread after a failed GET', async () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const mockThreads = [
+      {
+        id: 'thread-123',
+        title: 'Existing Thread',
+        updated_at: new Date().toISOString(),
+      },
+    ];
+    let historyCalls = 0;
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/threads/') && url.includes('/history')) {
+        historyCalls += 1;
+        if (historyCalls === 1) {
+          return Promise.resolve({ ok: false, status: 500 });
+        }
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              messages: [
+                {
+                  id: 'msg-1',
+                  role: 'user',
+                  content: 'Recovered',
+                  status: 'done',
+                  toolCalls: [],
+                },
+              ],
+            }),
+        });
+      }
+      if (url.includes('/threads')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve(mockThreads),
+        });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+    });
+
+    const { result } = renderHook(() => useThreadsContext(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.threads).toHaveLength(1);
+    });
+    await waitFor(() => expect(historyCalls).toBeGreaterThanOrEqual(1));
+    expect(result.current.threads[0].messages).toHaveLength(0);
+
+    await act(async () => {
+      result.current.setActiveThreadId('thread-123');
+    });
+
+    await waitFor(() => {
+      expect(result.current.threads[0].messages).toHaveLength(1);
+    });
+    expect(result.current.threads[0].messages[0].content).toBe('Recovered');
+    consoleSpy.mockRestore();
+  });
+
   it('should handle fetch errors gracefully', async () => {
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     global.fetch = vi.fn().mockRejectedValueOnce(new Error('Network Error'));

@@ -10,6 +10,7 @@
 graphify-out/
 .claude/worktrees/
 .claude/settings.local.json
+.playwright-mcp/
 
 # local handoff notes
 handoffs/

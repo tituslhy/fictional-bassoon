@@ -20,7 +20,13 @@ vi.mock('@/hooks/useSSEStream', () => ({
 }));
 
 vi.mock('./MessageList', () => ({
-  default: () => <div data-testid="message-list">Message List</div>,
+  default: ({ messages }: { messages?: Array<{ id: string; content: string }> }) => (
+    <div data-testid="message-list">
+      {(messages || []).map(m => (
+        <div key={m.id}>{m.content}</div>
+      ))}
+    </div>
+  ),
 }));
 
 vi.mock('./MessageInput', () => ({
@@ -63,6 +69,7 @@ describe('Chat Component - Rendering and Integration', () => {
     (ThreadContext.useThreadsContext as any).mockReturnValue({
       activeThreadId: 'thread_123',
       createThread: vi.fn().mockResolvedValue('thread_123'),
+      threads: mockStore.threads,
     });
 
     (ThreadContext.useThreadStore as any).mockReturnValue({
@@ -88,6 +95,27 @@ describe('Chat Component - Rendering and Integration', () => {
     expect(screen.getByTestId('message-list')).toBeInTheDocument();
     expect(screen.getByTestId('message-input')).toBeInTheDocument();
     expect(screen.getByTestId('sidebar')).toBeInTheDocument();
+  });
+
+  it('should paint hydrated messages from thread context without an extra click', () => {
+    mockStore.threads[0].messages = [
+      {
+        id: 'h1',
+        role: 'user',
+        content: 'Hello from checkpoint',
+        status: 'done',
+        toolCalls: [],
+      },
+    ];
+    (ThreadContext.useThreadsContext as any).mockReturnValue({
+      activeThreadId: 'thread_123',
+      createThread: vi.fn(),
+      threads: mockStore.threads,
+    });
+
+    render(<Chat />);
+
+    expect(screen.getByText('Hello from checkpoint')).toBeInTheDocument();
   });
 
   it('should call useSSEStream with correct token', () => {
@@ -140,6 +168,7 @@ describe('Chat Component - Message Sending', () => {
     (ThreadContext.useThreadsContext as any).mockReturnValue({
       activeThreadId: 'thread_123',
       createThread: vi.fn().mockResolvedValue('thread_123'),
+      threads: mockStore.threads,
     });
 
     (ThreadContext.useThreadStore as any).mockReturnValue({
@@ -204,6 +233,7 @@ describe('Chat Component - Message Sending', () => {
     (ThreadContext.useThreadsContext as any).mockReturnValue({
       activeThreadId: null,
       createThread: mockCreate,
+      threads: [],
     });
 
     render(<Chat />);
@@ -251,6 +281,7 @@ describe('Chat Component - AG-UI Event Handling Logic', () => {
     (ThreadContext.useThreadsContext as any).mockReturnValue({
       activeThreadId: 'thread_123',
       createThread: vi.fn().mockResolvedValue('thread_123'),
+      threads: mockStore.threads,
     });
 
     (ThreadContext.useThreadStore as any).mockReturnValue({
@@ -777,6 +808,7 @@ describe('Chat Component - Error Handling', () => {
     (ThreadContext.useThreadsContext as any).mockReturnValue({
       activeThreadId: 'thread_123',
       createThread: vi.fn().mockResolvedValue('thread_123'),
+      threads: mockStore.threads,
     });
 
     (ThreadContext.useThreadStore as any).mockReturnValue({
@@ -868,7 +900,8 @@ describe('Chat Component - Error Handling', () => {
     const lastCall = calls[calls.length - 1];
     const messages = lastCall[1];
     const assistantMsg = messages.find((m: any) => m.role === 'assistant');
-    expect(assistantMsg.status).toBe('done');
+    expect(assistantMsg.status).toBe('error');
+    expect(assistantMsg.error).toBe('Stream ended unexpectedly');
   });
 
   it('should handle stream error and update store when thread exists', async () => {

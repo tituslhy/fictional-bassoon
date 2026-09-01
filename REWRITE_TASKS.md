@@ -133,6 +133,7 @@ scope here — encore, not this task. Still an open decision below.
       `ThreadContext` instead of `GET /threads?select=*,messages(*)`.
       Same-tab click-back may keep using in-memory state; the fetch is for
       reload / another device / a killed tab / first select this session.
+      Chat paints from `useThreadsContext().threads` (not the store ref).
 - [~] Keep `api.threads` as the user's thread catalog (ownership, title,
       sidebar). Stop using `api.messages` as the transcript (drop dual-write
       from `updateThreadMessages` / `addMessage`). Leave the table in place.
@@ -154,7 +155,7 @@ Today `MessageList` forwards one `isStreaming` flag to **every**
 markdown node, so in a multi-turn thread every historical assistant
 answer grows a blinking cursor while the new reply is in flight.
 
-- [~] Key the cursor off the in-progress message only (status
+- [x] Key the cursor off the in-progress message only (status
       `streaming`, or the streaming assistant id) — not the global hook.
       User bubbles and completed assistant bubbles stay still.
 
@@ -173,12 +174,12 @@ its own `isStreaming` — but `Chat.tsx` never passes `onComplete`, and
 `isStreamingRef` is only cleared on a terminal AG-UI event or `onError`.
 The input looks usable; `handleSend` no-ops.
 
-- [~] Idle timeout on `/chat`'s Redis listen, same class of failure as
+- [x] Idle timeout on `/chat`'s Redis listen, same class of failure as
       A2A: `asyncio.wait_for` on the listener; emit a terminal `RUN_ERROR`
       and close the SSE when the worker is presumed dead. **Import**
       `IDLE_TIMEOUT_SECONDS` from `src.protocol.executor` (do not edit
       the executor's A2A path; do not invent a second 120).
-- [~] Wire `onComplete` in `Chat.tsx` (or otherwise clear `isStreamingRef`
+- [x] Wire `onComplete` in `Chat.tsx` (or otherwise clear `isStreamingRef`
       and finalize the assistant message) so a stream that ends without a
       terminal event cannot leave send locked.
 
@@ -238,9 +239,9 @@ assume one of these is sufficient):
   inside Persistence)
 - `/` and `+` in quoted node text (`A2A Router /a2a + Agent Card`)
 
-- [~] Architecture `graph LR` renders on GitHub.
-- [~] Chat-stream `sequenceDiagram` renders on GitHub.
-- [~] Glance at `frontend/README.md` / `backend/README.md` mermaid
+- [x] Architecture `graph LR` renders on GitHub.
+- [x] Chat-stream `sequenceDiagram` renders on GitHub.
+- [x] Glance at `frontend/README.md` / `backend/README.md` mermaid
       blocks for the same failure class.
 
 Owner: **main session** (docs-only; keep developer subagents on code).
@@ -271,12 +272,12 @@ Checked 2026-09-01:
   `ThreadMessage` props. `useSSEStream`'s `onA2UITree` is the same
   trick (reduce AG-UI frames → tree) and `Chat.tsx` does not pass it.
 
-- [~] Agent/backend can emit a validated A2UI component tree on the
+- [x] Agent/backend can emit a validated A2UI component tree on the
       existing `/chat` SSE stream (`CUSTOM` as specified above).
       Synthesize in `backend/utils/streaming.py` (output side only —
       do not change `astream()` / `stream_mode` /
       `content_blocks`). Do not edit `src/agent.py`.
-- [~] `Chat.tsx` / `StreamingRenderer` render that tree via
+- [x] `Chat.tsx` / `StreamingRenderer` render that tree via
       `A2UIRenderer` when a `CUSTOM` `name: "a2ui"` payload is present;
       `buildLegacyStreamTree` remains the fallback.
 
@@ -290,7 +291,7 @@ types.
 New 2026-09-01. Write the file; **do not execute it in this cloud
 environment** (no API keys, no live LLM/Tavily).
 
-- [~] Add `fieldtest.md` at repo root with an explicit banner:
+- [x] Add `fieldtest.md` at repo root with an explicit banner:
       **do not run in cloud**. Checklist for Titus's laptop after
       `make up` with real keys:
       - Chat UI: reasoning / tool_call / markdown blocks on a live turn
@@ -321,11 +322,11 @@ personality is a Deep Agent with Tavily search — that is the present
 tooling, not the product identity. Do not change `src/agent.py`
 (`deep-agent-scope-lock.md`).
 
-- [~] Chat chrome: empty state, sidebar header, composer, login/signup
+- [x] Chat chrome: empty state, sidebar header, composer, login/signup
       copy, `layout.tsx` metadata — read as a reusable chat product,
       not a demo named after the repo. Tavily/search may appear as a
       capability hint, not as lock-in branding.
-- [~] Visual hierarchy and spacing of sidebar, message list, user
+- [x] Visual hierarchy and spacing of sidebar, message list, user
       bubbles, and input so the main path feels intentional. Tailwind
       utilities + existing lucide-react only (`frontend-stack-conventions.md`).
       No new CSS files, no new component libraries.
@@ -427,3 +428,8 @@ resolve any of them; each needs Titus's call.
   laptop-only). History GET, CUSTOM a2ui, /chat idle timeout, cursor
   keyed off message status, mermaid docs, Relay UI polish, fieldtest.md.
   Checkboxes `[~]` pending protocol-reviewer. Open decisions unchanged.
+- 2026-09-01 — protocol-reviewer: tasks 2, 3, 5, 6, 7, 8 verified `[x]`.
+  Task 1 stayed `[~]` (Chat painted from a stale `storeRef`; hydrate
+  GET succeeded while the pane stayed empty). Task 4 live smoke still
+  `[ ]`. Follow-up: Chat reads `threads` from context; idle timeout
+  closes open AG-UI brackets; unexpected stream end is `error`.

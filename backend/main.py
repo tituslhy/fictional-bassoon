@@ -9,7 +9,12 @@ from pathlib import Path
 from typing import Annotated
 
 import uvicorn
-from ag_ui.core.events import RunErrorEvent
+from ag_ui.core.events import (
+    ReasoningMessageEndEvent,
+    RunErrorEvent,
+    StepFinishedEvent,
+    TextMessageEndEvent,
+)
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.sse import EventSourceResponse, ServerSentEvent
@@ -108,6 +113,46 @@ async def login(request: LoginRequest):
 _TERMINAL_EVENT_TYPES = {"RUN_FINISHED", "RUN_ERROR"}
 
 
+def _agui_payload_field(data_payload: str, *keys: str) -> str | None:
+    """Read a camelCase (or snake_case) field from an AG-UI SSE data payload."""
+    try:
+        parsed = json.loads(data_payload)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    for key in keys:
+        value = parsed.get(key)
+        if value:
+            return str(value)
+    return None
+
+
+def _idle_timeout_close_events(
+    text_message_id: str | None,
+    reasoning_message_id: str | None,
+    step_name: str | None,
+) -> list[ServerSentEvent]:
+    """Close any open AG-UI brackets before a synthesized idle ``RUN_ERROR``."""
+    events: list[ServerSentEvent] = []
+    if text_message_id:
+        ev = TextMessageEndEvent(message_id=text_message_id)
+        events.append(
+            ServerSentEvent(raw_data=ev.model_dump_json(by_alias=True), event=ev.type.value)
+        )
+    if reasoning_message_id:
+        ev = ReasoningMessageEndEvent(message_id=reasoning_message_id)
+        events.append(
+            ServerSentEvent(raw_data=ev.model_dump_json(by_alias=True), event=ev.type.value)
+        )
+    if step_name:
+        ev = StepFinishedEvent(step_name=step_name)
+        events.append(
+            ServerSentEvent(raw_data=ev.model_dump_json(by_alias=True), event=ev.type.value)
+        )
+    return events
+
+
 @app.post("/chat", response_class=EventSourceResponse)
 async def chat(request: ChatRequest):
     """Stream agent events via SSE.
@@ -137,6 +182,9 @@ async def chat(request: ChatRequest):
         raise
 
     listener = pubsub.listen()
+    open_text_id: str | None = None
+    open_reasoning_id: str | None = None
+    open_step: str | None = None
     try:
         while True:
             try:
@@ -147,6 +195,10 @@ async def chat(request: ChatRequest):
                     IDLE_TIMEOUT_SECONDS,
                     job_id,
                 )
+                for close_event in _idle_timeout_close_events(
+                    open_text_id, open_reasoning_id, open_step
+                ):
+                    yield close_event
                 error_event = RunErrorEvent(
                     message=(f"Worker idle timeout: no events for {int(IDLE_TIMEOUT_SECONDS)}s")
                 )
@@ -171,6 +223,19 @@ async def chat(request: ChatRequest):
                 data_payload = event["data"]
             else:
                 data_payload = json.dumps(event)
+
+            if event_type == "TEXT_MESSAGE_START":
+                open_text_id = _agui_payload_field(data_payload, "messageId", "message_id")
+            elif event_type == "TEXT_MESSAGE_END":
+                open_text_id = None
+            elif event_type == "REASONING_MESSAGE_START":
+                open_reasoning_id = _agui_payload_field(data_payload, "messageId", "message_id")
+            elif event_type == "REASONING_MESSAGE_END":
+                open_reasoning_id = None
+            elif event_type == "STEP_STARTED":
+                open_step = _agui_payload_field(data_payload, "stepName", "step_name")
+            elif event_type == "STEP_FINISHED":
+                open_step = None
 
             # Use ServerSentEvent with raw_data to maintain exact string parity
             # with the previous implementation (avoiding double JSON encoding).

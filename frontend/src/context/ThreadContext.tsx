@@ -34,11 +34,13 @@ export function ThreadProvider({ children }: { children: ReactNode }) {
   const [isLoaded, setIsLoaded] = useState(false);
   const { token, user } = useAuth();
   const hydratedIdsRef = useRef<Set<string>>(new Set());
+  const inflightIdsRef = useRef<Set<string>>(new Set());
 
   const hydrateThread = useCallback(
     async (id: string) => {
       if (!token || !id) return;
-      if (hydratedIdsRef.current.has(id)) return;
+      if (hydratedIdsRef.current.has(id) || inflightIdsRef.current.has(id)) return;
+      inflightIdsRef.current.add(id);
       try {
         const res = await fetch(`${API_BASE}/threads/${id}/history`, {
           headers: { Authorization: `Bearer ${token}` },
@@ -56,6 +58,8 @@ export function ThreadProvider({ children }: { children: ReactNode }) {
         hydratedIdsRef.current.add(id);
       } catch (err) {
         console.error('Failed to hydrate thread history:', err);
+      } finally {
+        inflightIdsRef.current.delete(id);
       }
     },
     [token]
@@ -66,6 +70,7 @@ export function ThreadProvider({ children }: { children: ReactNode }) {
       setThreadsState([]);
       setIsLoaded(true);
       hydratedIdsRef.current.clear();
+      inflightIdsRef.current.clear();
       return;
     }
 
@@ -102,9 +107,17 @@ export function ThreadProvider({ children }: { children: ReactNode }) {
     fetchThreads();
   }, [token, user]);
 
-  const setActiveThreadId = useCallback((id: string | null) => {
-    setActiveThreadIdState(id);
-  }, []);
+  const setActiveThreadId = useCallback(
+    (id: string | null) => {
+      setActiveThreadIdState(id);
+      // Re-clicking the same unhydrated thread must retry (React bails on
+      // setState(same id), so the activeThreadId effect would not re-run).
+      if (id && !hydratedIdsRef.current.has(id)) {
+        void hydrateThread(id);
+      }
+    },
+    [hydrateThread]
+  );
 
   useEffect(() => {
     if (activeThreadId) {
@@ -152,6 +165,7 @@ export function ThreadProvider({ children }: { children: ReactNode }) {
   const deleteThread = useCallback(
     async (id: string) => {
       hydratedIdsRef.current.delete(id);
+      inflightIdsRef.current.delete(id);
       setThreadsState(prev => {
         const next = prev.filter(t => t.id !== id);
         if (activeThreadId === id && next.length > 0) {

@@ -239,8 +239,8 @@ Simple health check.
 ```
 backend/
 ├── main.py                      # FastAPI app entry point
-│                                # Routes: POST /chat, /auth/*, GET /health,
-│                                # A2A router (/a2a + agent card) via include_router
+│                                # Routes: POST /chat, GET /threads/{id}/history,
+│                                # /auth/*, GET /health, A2A router (/a2a + agent card)
 ├── pyproject.toml               # Python dependencies (ag-ui-protocol + a2a-sdk pinned)
 ├── uv.lock                      # Locked dependency lockfile
 ├── .env                         # Environment variables (DO NOT commit)

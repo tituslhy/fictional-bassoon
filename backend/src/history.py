@@ -135,7 +135,9 @@ async def load_checkpoint_messages(pool, thread_id: str) -> list[Any]:
     """Read the latest checkpoint's ``messages`` channel for ``thread_id``.
 
     Uses a short-lived ``AsyncPostgresSaver`` on the existing FastAPI pool —
-    no ``setup()``, no agent construction. Missing checkpoint → empty list.
+    no ``setup()``, no agent construction, and the pool is **not** closed here
+    (it is borrowed from ``get_db_pool()``, not owned by this helper).
+    Missing checkpoint → empty list.
     """
     saver = AsyncPostgresSaver(pool)
     config: dict[str, Any] = {"configurable": {"thread_id": thread_id}}
