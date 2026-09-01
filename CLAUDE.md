@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A full-stack AI chat application that streams agent reasoning, tool calls, and final answers in real time via SSE. The backend is FastAPI + Celery + LangGraph (Python); the frontend is Next.js App Router (TypeScript). Infrastructure is fully Dockerised with PostgreSQL/Citus, Redis Sentinel, RabbitMQ, and an LGTM observability stack.
 
-**Mid-migration:** the project is moving from a hand-wired custom SSE event vocabulary to a protocol-driven architecture — AG-UI for the agent↔frontend event stream (still over SSE, see `sse-transport-lock.md`), A2UI for declarative frontend rendering instead of fixed React components (see `a2ui-no-executable-ui.md`), and A2A to expose the backend as a callable service to other agents. Until that migration is done, the SSE event types section below is the *current* (legacy) vocabulary, not the target one.
+**Protocol-driven architecture (migration landed 2026-09-01, reviewer-verified):** AG-UI for the agent↔frontend event stream (still over SSE, see `sse-transport-lock.md`), A2UI for declarative frontend rendering via a scoped allow-list instead of fixed React components (see `a2ui-no-executable-ui.md`), and A2A exposing the backend as a callable service to other agents (Agent Card at `/.well-known/agent-card.json`, JSON-RPC at `POST /a2a`). The legacy hand-wired SSE vocabulary is fully retired; the AG-UI event types section below is the current vocabulary. See `REWRITE_TASKS.md` for the migration record and remaining open decisions.
 
 ## Repository layout
 
@@ -140,10 +140,10 @@ Frontend expects `NEXT_PUBLIC_API_URL` in `frontend/.env.local` (default: `http:
 | Redis Insight | 5540 |
 | PostgREST | 3002 |
 
-## SSE event types (current — being replaced by AG-UI)
+## SSE event types (AG-UI)
 
-The backend emits these event types over the `/chat` SSE stream; the frontend `useSSEStream.ts` hook and `StreamingRenderer.tsx` consume them:
+The backend (`backend/utils/streaming.py`) emits AG-UI protocol events (`ag-ui-protocol==0.1.21`, pinned — see `.claude/rules/protocol-version-pinning.md`) over the `/chat` SSE stream; the frontend `useSSEStream.ts` hook parses them and `Chat.tsx` consumes them:
 
-`reasoning` · `tool_call` · `tool_result` · `answer` · `agent` · `error` · `done`
+`RUN_STARTED` · `RUN_FINISHED` · `RUN_ERROR` · `STEP_STARTED` · `STEP_FINISHED` · `TEXT_MESSAGE_START/CONTENT/END` · `REASONING_MESSAGE_START/CONTENT/END` · `TOOL_CALL_START/ARGS/END/RESULT`
 
-This is the pre-migration vocabulary. Once AG-UI wiring lands, this list is superseded by AG-UI's standard event types — update this section (and its header) at that point rather than leaving both vocabularies documented as current.
+`RUN_FINISHED` and `RUN_ERROR` are the terminal events (`RUN_ERROR` is never followed by `RUN_FINISHED`). Payloads are camelCase JSON on the `data` field with the type name duplicated on the SSE `event:` field — a documented deviation from AG-UI's reference encoder, kept for the hand-rolled `parseSSE()` (see the pin note in `protocol-version-pinning.md`). The pre-migration vocabulary (`reasoning`/`tool_call`/`tool_result`/`answer`/`agent`/`error`/`done`) is retired.
