@@ -81,6 +81,27 @@ describe('StreamingRenderer', () => {
     expect(screen.queryByText('Show reasoning')).not.toBeInTheDocument();
   });
 
+  it('should fall back to a synthesized tree when a2ui fails validation', () => {
+    const invalid = {
+      id: 'x',
+      component: 'button',
+      label: 'nope',
+    };
+
+    render(
+      <StreamingRenderer
+        reasoning=""
+        answer="Fallback answer"
+        toolCalls={[]}
+        isStreaming={false}
+        a2ui={invalid as never}
+      />
+    );
+
+    expect(screen.getByText('Fallback answer')).toBeInTheDocument();
+    expect(screen.queryByText('nope')).not.toBeInTheDocument();
+  });
+
   it('should handle empty tool results correctly', () => {
     const toolCalls = [
       {

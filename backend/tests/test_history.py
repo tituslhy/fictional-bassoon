@@ -76,6 +76,14 @@ def test_tool_args_non_string_are_json_encoded():
     assert calls[0].args == "3"
 
 
+def test_tool_args_string_pass_through():
+    msg = MagicMock()
+    msg.tool_calls = [{"name": "search", "args": '{"q":"x"}', "id": "c1"}]
+    calls = _tool_calls_from_ai(msg)
+    assert calls[0].args == '{"q":"x"}'
+    assert calls[0].name == "search"
+
+
 def test_attach_tool_result_edge_cases():
     human = HumanMessage(content="hi", id="h1")
     ai = AIMessage(
