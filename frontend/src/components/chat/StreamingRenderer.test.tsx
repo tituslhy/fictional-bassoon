@@ -56,6 +56,31 @@ describe('StreamingRenderer', () => {
     expect(cursor).toBeInTheDocument();
   });
 
+  it('should render a wire A2UI tree instead of synthesizing fields', () => {
+    const tree = {
+      id: 'root',
+      component: 'column' as const,
+      gap: 'loose' as const,
+      children: [
+        { id: 'answer', component: 'markdown' as const, text: 'Wire markdown', streaming: false },
+      ],
+    };
+
+    render(
+      <StreamingRenderer
+        reasoning="should not show"
+        answer="fallback answer"
+        toolCalls={[]}
+        isStreaming={false}
+        a2ui={tree}
+      />
+    );
+
+    expect(screen.getByText('Wire markdown')).toBeInTheDocument();
+    expect(screen.queryByText('fallback answer')).not.toBeInTheDocument();
+    expect(screen.queryByText('Show reasoning')).not.toBeInTheDocument();
+  });
+
   it('should handle empty tool results correctly', () => {
     const toolCalls = [
       {

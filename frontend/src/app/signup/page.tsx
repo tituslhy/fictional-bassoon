@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
+import { Sparkles } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 
 export default function SignupPage() {
@@ -20,11 +21,14 @@ export default function SignupPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-950 px-4">
-      <div className="w-full max-w-md space-y-8 rounded-2xl border border-zinc-800 bg-zinc-900/50 p-8 backdrop-blur-sm">
+    <div className="flex min-h-screen items-center justify-center px-4">
+      <div className="w-full max-w-md space-y-8 rounded-3xl border border-white/10 bg-zinc-950/60 p-8 shadow-[0_24px_80px_-32px_rgba(99,102,241,0.45)] backdrop-blur-xl">
         <div className="text-center">
-          <h1 className="text-3xl font-bold tracking-tight text-white">Create an account</h1>
-          <p className="mt-2 text-zinc-400">Join fictional-bassoon today</p>
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-500/20 shadow-[0_0_32px_-8px_rgba(129,140,248,0.9)] ring-1 ring-indigo-400/30">
+            <Sparkles className="h-5 w-5 text-indigo-300" />
+          </div>
+          <h1 className="text-2xl font-semibold tracking-tight text-white">Create an account</h1>
+          <p className="mt-2 text-sm text-zinc-400">Join Relay — a chat surface for any agent</p>
         </div>
 
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
@@ -37,8 +41,8 @@ export default function SignupPage() {
                 id="fullName"
                 name="fullName"
                 type="text"
-                className="mt-1 block w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-white placeholder-zinc-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-sm"
-                placeholder="John Doe"
+                className="mt-1 block w-full rounded-xl border border-white/10 bg-zinc-950 px-3 py-2.5 text-white placeholder-zinc-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 sm:text-sm"
+                placeholder="Jane Doe"
                 value={fullName}
                 onChange={e => setFullName(e.target.value)}
               />
@@ -52,7 +56,7 @@ export default function SignupPage() {
                 name="email"
                 type="email"
                 required
-                className="mt-1 block w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-white placeholder-zinc-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-sm"
+                className="mt-1 block w-full rounded-xl border border-white/10 bg-zinc-950 px-3 py-2.5 text-white placeholder-zinc-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 sm:text-sm"
                 placeholder="you@example.com"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
@@ -67,7 +71,7 @@ export default function SignupPage() {
                 name="password"
                 type="password"
                 required
-                className="mt-1 block w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-white placeholder-zinc-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-sm"
+                className="mt-1 block w-full rounded-xl border border-white/10 bg-zinc-950 px-3 py-2.5 text-white placeholder-zinc-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 sm:text-sm"
                 placeholder="••••••••"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
@@ -76,7 +80,7 @@ export default function SignupPage() {
           </div>
 
           {error && (
-            <div className="rounded-lg bg-red-500/10 p-3 text-sm text-red-500 border border-red-500/20">
+            <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-400">
               {error}
             </div>
           )}
@@ -85,16 +89,16 @@ export default function SignupPage() {
             <button
               type="submit"
               disabled={isLoading}
-              className="flex w-full justify-center rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-zinc-900 disabled:opacity-50"
+              className="flex w-full justify-center rounded-xl bg-indigo-500 px-4 py-2.5 text-sm font-semibold text-white shadow-sm shadow-indigo-500/25 transition-colors hover:bg-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-zinc-900 disabled:opacity-50"
             >
-              {isLoading ? 'Creating account...' : 'Sign up'}
+              {isLoading ? 'Creating account...' : 'Create account'}
             </button>
           </div>
         </form>
 
         <div className="text-center text-sm">
           <span className="text-zinc-400">Already have an account? </span>
-          <Link href="/login" className="font-semibold text-blue-500 hover:text-blue-400">
+          <Link href="/login" className="font-semibold text-indigo-400 hover:text-indigo-300">
             Sign in
           </Link>
         </div>

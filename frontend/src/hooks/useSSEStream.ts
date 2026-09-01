@@ -176,6 +176,15 @@ function applyA2UIFrame(
   const aguiEvent = parseAGUIStreamEvent(frame);
   if (!aguiEvent) return state;
 
+  if (aguiEvent.type === 'CUSTOM' && aguiEvent.name === 'a2ui') {
+    try {
+      onA2UITree(validateComponentTree(aguiEvent.value));
+    } catch (err) {
+      console.error('A2UI tree validation failed', err);
+    }
+    return state;
+  }
+
   const nextState = applyAGUIStreamEvent(state, aguiEvent);
   try {
     onA2UITree(validateComponentTree(streamStateToA2UITree(nextState)));

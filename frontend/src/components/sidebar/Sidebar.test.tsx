@@ -28,7 +28,7 @@ describe('Sidebar', () => {
 
     render(<Sidebar />);
 
-    expect(screen.getByText('New Thread')).toBeInTheDocument();
+    expect(screen.getByText('New chat')).toBeInTheDocument();
   });
 
   it('should render thread list', () => {
@@ -56,6 +56,31 @@ describe('Sidebar', () => {
     expect(screen.getByText('Thread 2')).toBeInTheDocument();
   });
 
+  it('should filter threads by search query', () => {
+    const threads = [
+      { id: '1', title: 'Weather in London', messages: [] },
+      { id: '2', title: 'Citus sharding', messages: [] },
+    ];
+
+    (ThreadContext.useThreadsContext as any).mockReturnValue({
+      threads,
+      activeThreadId: '1',
+      setActiveThreadId: vi.fn(),
+      createThread: vi.fn(),
+      deleteThread: vi.fn(),
+    });
+    (AuthContext.useAuth as any).mockReturnValue({
+      user: null,
+      logout: vi.fn(),
+    });
+
+    render(<Sidebar />);
+
+    fireEvent.change(screen.getByLabelText('Search chats'), { target: { value: 'Citus' } });
+    expect(screen.getByText('Citus sharding')).toBeInTheDocument();
+    expect(screen.queryByText('Weather in London')).not.toBeInTheDocument();
+  });
+
   it('should show empty state when no threads', () => {
     (ThreadContext.useThreadsContext as any).mockReturnValue({
       threads: [],
@@ -71,8 +96,8 @@ describe('Sidebar', () => {
 
     render(<Sidebar />);
 
-    expect(screen.getByText(/No threads yet/)).toBeInTheDocument();
-    expect(screen.getByText(/Create one to get started/)).toBeInTheDocument();
+    expect(screen.getByText(/No conversations yet/)).toBeInTheDocument();
+    expect(screen.getByText(/Start one to keep a thread/)).toBeInTheDocument();
   });
 
   it('should display user info when logged in', () => {
@@ -180,7 +205,7 @@ describe('Sidebar', () => {
 
     render(<Sidebar />);
 
-    const newThreadBtn = screen.getByText('New Thread');
+    const newThreadBtn = screen.getByText('New chat');
     fireEvent.click(newThreadBtn);
 
     expect(mockCreateThread).toHaveBeenCalled();
@@ -209,7 +234,7 @@ describe('Sidebar', () => {
 
     // Click on first thread's title button
     const threadButtons = container.querySelectorAll('button');
-    fireEvent.click(threadButtons[1]); // First button is New Thread, second is first thread
+    fireEvent.click(threadButtons[1]); // First button is New chat, second is first thread
 
     expect(mockSetActiveThreadId).toHaveBeenCalledWith('1');
   });

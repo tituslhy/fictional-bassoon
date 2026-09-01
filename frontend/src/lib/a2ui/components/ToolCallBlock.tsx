@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronDown, ChevronRight, Code } from 'lucide-react';
+import { ChevronDown, ChevronRight, Wrench } from 'lucide-react';
 import type { A2UIToolCallNode } from '../schema';
 
 /**
@@ -14,31 +14,40 @@ import type { A2UIToolCallNode } from '../schema';
  */
 export default function ToolCallBlock({ node }: { node: A2UIToolCallNode }) {
   const [expanded, setExpanded] = useState(false);
+  const pending = node.result === undefined;
 
   return (
-    <div className="rounded-lg border border-[#262626] overflow-hidden">
+    <div className="overflow-hidden rounded-2xl ring-1 ring-white/10">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="flex w-full items-center gap-2 px-3 py-2 bg-[#1a1a1a] hover:bg-[#222] transition-colors text-left"
+        className="flex w-full items-center gap-2 bg-zinc-900/70 px-3 py-2 text-left transition-colors hover:bg-zinc-800/80"
       >
-        <Code className="w-4 h-4 text-[#f59e0b]" />
-        <span className="text-sm text-[#e5e5e5] font-medium">{node.name}</span>
-        <span className="ml-auto text-[#6b7280]">
-          {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+        <Wrench className="h-4 w-4 text-amber-400" />
+        <span className="text-sm font-medium text-zinc-100">{node.name}</span>
+        <span
+          className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${
+            pending ? 'bg-amber-400/10 text-amber-300' : 'bg-emerald-400/10 text-emerald-300'
+          }`}
+        >
+          {pending && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-300" />}
+          {pending ? 'running' : 'done'}
+        </span>
+        <span className="ml-auto text-zinc-500">
+          {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
         </span>
       </button>
       {expanded && (
-        <div className="bg-[#111] border-t border-[#262626]">
+        <div className="border-t border-white/5 bg-zinc-950">
           <div className="px-4 py-2">
-            <p className="text-xs text-[#6b7280] mb-1">Arguments</p>
-            <pre className="text-xs text-[#9ca3af] font-mono whitespace-pre-wrap bg-[#0a0a0a] rounded border border-[#262626] px-3 py-2 max-h-40 overflow-auto">
+            <p className="mb-1 text-xs text-zinc-500">Arguments</p>
+            <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded-xl bg-zinc-900 px-3 py-2 font-mono text-xs text-zinc-400 ring-1 ring-white/5">
               {node.args}
             </pre>
           </div>
           {node.result && (
-            <div className="px-4 py-2 border-t border-[#262626]">
-              <p className="text-xs text-[#6b7280] mb-1">Result</p>
-              <pre className="text-xs text-[#e5e5e5] font-mono whitespace-pre-wrap bg-[#0a0a0a] rounded border border-[#262626] px-3 py-2 max-h-40 overflow-auto">
+            <div className="border-t border-white/5 px-4 py-2">
+              <p className="mb-1 text-xs text-zinc-500">Result</p>
+              <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded-xl bg-zinc-900 px-3 py-2 font-mono text-xs text-zinc-200 ring-1 ring-white/5">
                 {node.result}
               </pre>
             </div>

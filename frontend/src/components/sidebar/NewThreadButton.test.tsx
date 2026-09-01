@@ -7,7 +7,7 @@ describe('NewThreadButton', () => {
     const mockOnClick = vi.fn();
     render(<NewThreadButton onClick={mockOnClick} />);
 
-    expect(screen.getByText('New Thread')).toBeInTheDocument();
+    expect(screen.getByText('New chat')).toBeInTheDocument();
   });
 
   it('should call onClick when clicked', () => {
@@ -37,8 +37,8 @@ describe('NewThreadButton', () => {
     const button = screen.getByRole('button');
     expect(button).toHaveClass('flex');
     expect(button).toHaveClass('w-full');
-    expect(button).toHaveClass('rounded-lg');
-    expect(button).toHaveClass('bg-[#3b82f6]');
+    expect(button).toHaveClass('rounded-xl');
+    expect(button).toHaveClass('bg-indigo-500');
   });
 
   it('should call onClick multiple times on multiple clicks', () => {

@@ -3,23 +3,24 @@
 @tailwind utilities;
 
 :root {
-  --bg-primary: #0a0a0a;
-  --bg-sidebar: #0f0f0f;
-  --bg-hover: #1a1a1a;
-  --bg-input: #1e1e1e;
-  --bg-user-bubble: #1e293b;
-  --bg-tool-card: #1a1a1a;
-  --bg-tool-expanded: #111111;
-  --text-primary: #e5e5e5;
-  --text-secondary: #9ca3af;
-  --text-muted: #6b7280;
-  --accent: #3b82f6;
-  --accent-hover: #2563eb;
-  --reasoning: #6b7280;
+  color-scheme: dark;
+  --bg-primary: #07070a;
+  --bg-sidebar: #07070a;
+  --bg-hover: #18181b;
+  --bg-input: #18181b;
+  --bg-user-bubble: rgba(99, 102, 241, 0.16);
+  --bg-tool-card: #18181b;
+  --bg-tool-expanded: #09090b;
+  --text-primary: #fafafa;
+  --text-secondary: #a1a1aa;
+  --text-muted: #71717a;
+  --accent: #818cf8;
+  --accent-hover: #a5b4fc;
+  --reasoning: #71717a;
   --tool-accent: #f59e0b;
-  --error-red: #ef4444;
-  --border: #262626;
-  --sidebar-active: #1a1a1a;
+  --error-red: #f87171;
+  --border: rgba(255, 255, 255, 0.06);
+  --sidebar-active: rgba(255, 255, 255, 0.08);
 }
 
 html {
@@ -30,6 +31,16 @@ html {
 body {
   margin: 0;
   min-height: 100vh;
+  background-color: #07070a;
+  background-image:
+    radial-gradient(ellipse 90% 55% at 8% -10%, rgba(99, 102, 241, 0.22), transparent 55%),
+    radial-gradient(ellipse 70% 45% at 100% 0%, rgba(168, 85, 247, 0.1), transparent 50%);
+  background-attachment: fixed;
+}
+
+::selection {
+  background: rgba(129, 140, 248, 0.35);
+  color: #fafafa;
 }
 
 ::-webkit-scrollbar {
@@ -39,9 +50,9 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #333;
+  background: #3f3f46;
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #555;
+  background: #52525b;
 }

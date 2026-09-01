@@ -15,6 +15,7 @@ from collections.abc import AsyncGenerator
 
 from ag_ui.core.events import (
     BaseEvent,
+    CustomEvent,
     ReasoningMessageContentEvent,
     ReasoningMessageEndEvent,
     ReasoningMessageStartEvent,
@@ -35,6 +36,8 @@ from ag_ui.core.events import (
 from langchain.messages import AIMessage, AIMessageChunk, AnyMessage, ToolMessage
 from langfuse import Langfuse
 from langfuse.langchain import CallbackHandler
+
+from utils.a2ui import A2UIValidationError, build_stream_tree, validate_component_tree
 
 logger = logging.getLogger("backend")
 
@@ -62,6 +65,11 @@ class _RunState:
         # tool_call chunk index -> tool_call_id, to resolve continuation
         # chunks that carry an index but not an id.
         self.tool_call_index_to_id: dict[int, str] = {}
+        # Running 4-type A2UI tree (emitted as CUSTOM name=a2ui).
+        self.a2ui_reasoning: str = ""
+        self.a2ui_answer: str = ""
+        self.a2ui_streaming: bool = False
+        self.a2ui_tool_calls: list[dict[str, str]] = []
 
 
 def _to_dict(event: BaseEvent) -> dict:
@@ -76,9 +84,12 @@ async def stream_agent_events(agent, request) -> AsyncGenerator[dict, None]:
     and ``version="v2"`` (non-negotiable per ``streaming-patterns.md``) and
     converts each chunk into one or more AG-UI events (``RUN_STARTED``,
     ``STEP_STARTED``/``STEP_FINISHED``, ``TEXT_MESSAGE_*``,
-    ``REASONING_MESSAGE_*``, ``TOOL_CALL_*``). Emits ``RUN_FINISHED`` when the
-    agent completes successfully, or ``RUN_ERROR`` on exception (not both —
-    ``RUN_ERROR`` is a terminal outcome in its own right).
+    ``REASONING_MESSAGE_*``, ``TOOL_CALL_*``) plus ``CUSTOM`` frames
+    (``name: "a2ui"``, nested 4-type tree in ``value``) after each
+    tree-mutating event. Emits ``RUN_FINISHED`` when the agent completes
+    successfully, or ``RUN_ERROR`` on exception (not both —
+    ``RUN_ERROR`` is a terminal outcome in its own right). The last ``CUSTOM``
+    before ``RUN_FINISHED`` has markdown ``streaming: false``.
     """
     # langfuse v3+/v4 CallbackHandler takes no per-trace kwargs; request-specific
     # session and metadata are propagated via the langfuse_-prefixed keys in the
@@ -108,6 +119,7 @@ async def stream_agent_events(agent, request) -> AsyncGenerator[dict, None]:
     logger.info("streaming agent events for thread_id=%s", thread_id)
 
     yield _to_dict(RunStartedEvent(thread_id=thread_id, run_id=run_id))
+    state.a2ui_streaming = True
 
     try:
         async for chunk in agent.astream(
@@ -156,6 +168,10 @@ async def stream_agent_events(agent, request) -> AsyncGenerator[dict, None]:
             # happy path closes these via the matching "updates" chunk).
             for e in _close_open_streams(state):
                 yield e
+            state.a2ui_streaming = False
+            custom = _a2ui_custom_event(state)
+            if custom is not None:
+                yield custom
             yield _to_dict(
                 RunFinishedEvent(
                     thread_id=thread_id,
@@ -163,6 +179,53 @@ async def stream_agent_events(agent, request) -> AsyncGenerator[dict, None]:
                     outcome=RunFinishedSuccessOutcome(),
                 )
             )
+
+
+def _a2ui_custom_event(state: _RunState) -> dict | None:
+    """Serialize the running 4-type tree as AG-UI ``CUSTOM`` ``name=a2ui``.
+
+    Returns ``None`` (and logs) if the tree fails validation — the AG-UI
+    text/tool stream still goes out; a bad tree must not kill the run.
+    Verified against installed ``ag-ui-protocol==0.1.21`` ``CustomEvent``:
+    required fields are ``name: str`` and ``value: Any``.
+    """
+    try:
+        tree = validate_component_tree(
+            build_stream_tree(
+                reasoning=state.a2ui_reasoning,
+                answer=state.a2ui_answer,
+                tool_calls=state.a2ui_tool_calls,
+                streaming=state.a2ui_streaming,
+            )
+        )
+    except A2UIValidationError:
+        logger.warning("skipping invalid A2UI CUSTOM tree", exc_info=True)
+        return None
+    return _to_dict(CustomEvent(name="a2ui", value=tree))
+
+
+def _ensure_a2ui_tool_call(state: _RunState, tool_call_id: str, name: str) -> None:
+    for tc in state.a2ui_tool_calls:
+        if tc["id"] == tool_call_id:
+            if name and not tc.get("name"):
+                tc["name"] = name
+            return
+    state.a2ui_tool_calls.append({"id": tool_call_id, "name": name, "args": ""})
+
+
+def _append_a2ui_tool_args(state: _RunState, tool_call_id: str, delta: str) -> None:
+    for tc in state.a2ui_tool_calls:
+        if tc["id"] == tool_call_id:
+            tc["args"] = (tc.get("args") or "") + delta
+            return
+
+
+def _set_a2ui_tool_result(state: _RunState, tool_call_id: str, content: str) -> None:
+    for tc in state.a2ui_tool_calls:
+        if tc["id"] == tool_call_id:
+            tc["result"] = content
+            return
+    state.a2ui_tool_calls.append({"id": tool_call_id, "name": "", "args": "", "result": content})
 
 
 def _close_open_streams(state: _RunState) -> list[dict]:
@@ -207,6 +270,10 @@ def _handle_message_chunk(token: AIMessageChunk, state: _RunState) -> list[dict]
                     ReasoningMessageContentEvent(message_id=state.reasoning_message_id, delta=delta)
                 )
             )
+            state.a2ui_reasoning += delta
+            custom = _a2ui_custom_event(state)
+            if custom is not None:
+                events.append(custom)
 
     if token.text:
         if state.text_message_id is None:
@@ -215,6 +282,10 @@ def _handle_message_chunk(token: AIMessageChunk, state: _RunState) -> list[dict]
         events.append(
             _to_dict(TextMessageContentEvent(message_id=state.text_message_id, delta=token.text))
         )
+        state.a2ui_answer += token.text
+        custom = _a2ui_custom_event(state)
+        if custom is not None:
+            events.append(custom)
 
     if token.tool_call_chunks:
         for tc in token.tool_call_chunks:
@@ -230,20 +301,29 @@ def _handle_message_chunk(token: AIMessageChunk, state: _RunState) -> list[dict]
 
             if resolved_id not in state.started_tool_calls:
                 state.started_tool_calls[resolved_id] = True
+                tool_name = tc.get("name") or ""
                 events.append(
                     _to_dict(
                         ToolCallStartEvent(
                             tool_call_id=resolved_id,
-                            tool_call_name=tc.get("name") or "",
+                            tool_call_name=tool_name,
                         )
                     )
                 )
+                _ensure_a2ui_tool_call(state, resolved_id, tool_name)
+                custom = _a2ui_custom_event(state)
+                if custom is not None:
+                    events.append(custom)
 
             args_delta = tc.get("args")
             if args_delta:
                 events.append(
                     _to_dict(ToolCallArgsEvent(tool_call_id=resolved_id, delta=args_delta))
                 )
+                _append_a2ui_tool_args(state, resolved_id, args_delta)
+                custom = _a2ui_custom_event(state)
+                if custom is not None:
+                    events.append(custom)
 
     return events
 
@@ -278,7 +358,15 @@ def _handle_completed_message(message: AnyMessage, state: _RunState) -> list[dic
                     events.append(
                         _to_dict(ToolCallStartEvent(tool_call_id=tc_id, tool_call_name=tc["name"]))
                     )
+                    _ensure_a2ui_tool_call(state, tc_id, tc["name"])
+                    custom = _a2ui_custom_event(state)
+                    if custom is not None:
+                        events.append(custom)
                     events.append(_to_dict(ToolCallArgsEvent(tool_call_id=tc_id, delta=args)))
+                    _append_a2ui_tool_args(state, tc_id, args)
+                    custom = _a2ui_custom_event(state)
+                    if custom is not None:
+                        events.append(custom)
 
                 events.append(_to_dict(ToolCallEndEvent(tool_call_id=tc_id)))
                 state.started_tool_calls.pop(tc_id, None)
@@ -297,5 +385,9 @@ def _handle_completed_message(message: AnyMessage, state: _RunState) -> list[dic
                 )
             )
         )
+        _set_a2ui_tool_result(state, message.tool_call_id, content)
+        custom = _a2ui_custom_event(state)
+        if custom is not None:
+            events.append(custom)
 
     return events

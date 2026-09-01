@@ -1,22 +1,27 @@
 """FastAPI application with SSE chat and health endpoints."""
 
+import asyncio
 import json
 import logging
 from contextlib import asynccontextmanager
 from logging.config import fileConfig
 from pathlib import Path
+from typing import Annotated
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, status
+from ag_ui.core.events import RunErrorEvent
+from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 from prometheus_fastapi_instrumentator import Instrumentator
 
-from src.auth import create_access_token, hash_password, verify_password
+from src.auth import create_access_token, hash_password, require_user_id, verify_password
 from src.db import close_db_pool, get_db_pool
 from src.db_bootstrap import ensure_api_schema
+from src.history import checkpoint_messages_to_history, load_checkpoint_messages
 from src.models.auth_models import LoginRequest, SignupRequest, TokenResponse
-from src.models.chat_models import ChatRequest, HealthResponse
+from src.models.chat_models import ChatRequest, HealthResponse, HistoryResponse
+from src.protocol.executor import IDLE_TIMEOUT_SECONDS
 from src.protocol.router import build_a2a_router
 from src.queue.redis_pubsub import redis_client, subscribe
 from src.worker.tasks import run_agent_task
@@ -131,8 +136,28 @@ async def chat(request: ChatRequest):
         logger.exception("failed to enqueue chat task: job_id=%s", job_id)
         raise
 
+    listener = pubsub.listen()
     try:
-        async for message in pubsub.listen():
+        while True:
+            try:
+                message = await asyncio.wait_for(listener.__anext__(), timeout=IDLE_TIMEOUT_SECONDS)
+            except TimeoutError:
+                logger.warning(
+                    "chat idle timeout after %.0fs: job_id=%s (worker presumed dead)",
+                    IDLE_TIMEOUT_SECONDS,
+                    job_id,
+                )
+                error_event = RunErrorEvent(
+                    message=(f"Worker idle timeout: no events for {int(IDLE_TIMEOUT_SECONDS)}s")
+                )
+                yield ServerSentEvent(
+                    raw_data=error_event.model_dump_json(by_alias=True),
+                    event=error_event.type.value,
+                )
+                break
+            except StopAsyncIteration:
+                break
+
             if message["type"] != "message":
                 continue
 
@@ -157,6 +182,33 @@ async def chat(request: ChatRequest):
     finally:
         await pubsub.unsubscribe(f"stream:{job_id}")
         await pubsub.close()
+
+
+@app.get("/threads/{thread_id}/history", response_model=HistoryResponse)
+async def thread_history(
+    thread_id: str,
+    user_id: Annotated[str, Depends(require_user_id)],
+) -> HistoryResponse:
+    """Hydrate a thread's transcript from the LangGraph checkpointer.
+
+    Ownership is enforced here (FastAPI's pool is privileged — PostgREST RLS
+    does not apply). Missing or not-owned threads return 404. Empty
+    checkpoint → ``{"messages": []}``. Does not expose checkpoint tables
+    through PostgREST and does not construct the agent.
+    """
+    pool = await get_db_pool()
+    async with pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "SELECT 1 FROM api.threads WHERE id = %s AND user_id = %s",
+                (thread_id, user_id),
+            )
+            owned = await cur.fetchone()
+    if not owned:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found")
+
+    raw = await load_checkpoint_messages(pool, thread_id)
+    return HistoryResponse(messages=checkpoint_messages_to_history(raw))
 
 
 @app.get("/health")

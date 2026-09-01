@@ -28,6 +28,24 @@ def test_create_access_token():
         assert len(token) > 0
 
 
+def test_decode_access_token_round_trip():
+    from src.auth import decode_access_token
+
+    token = create_access_token({"user_id": "abc", "email": "x@y.z"})
+    payload = decode_access_token(token)
+    assert payload["user_id"] == "abc"
+    assert payload["email"] == "x@y.z"
+
+
+def test_decode_access_token_rejects_garbage():
+    import jwt as pyjwt
+
+    from src.auth import decode_access_token
+
+    with pytest.raises(pyjwt.PyJWTError):
+        decode_access_token("not-a-token")
+
+
 @pytest.mark.asyncio
 async def test_db_pool_lifecycle():
     with patch("src.db.AsyncConnectionPool") as mock_pool_class:

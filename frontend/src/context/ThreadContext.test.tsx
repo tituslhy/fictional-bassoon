@@ -148,7 +148,7 @@ describe('ThreadContext', () => {
     expect(result.current.threads[0].messages[1].status).toBe('streaming');
   });
 
-  it('should upsert finalized message when status is done', async () => {
+  it('should not dual-write finalized messages to api.messages', async () => {
     const fetchSpy = vi.spyOn(global, 'fetch');
     const { result } = renderHook(() => useThreadsContext(), { wrapper });
     await waitFor(() => expect(result.current.threads).toEqual([]));
@@ -168,23 +168,20 @@ describe('ThreadContext', () => {
       },
     ];
 
+    fetchSpy.mockClear();
+
     await act(async () => {
       result.current.updateThreadMessages(threadId, messages);
     });
 
-    // Should call fetch to upsert the "done" message
-    expect(fetchSpy).toHaveBeenCalledWith(
+    expect(result.current.threads[0].messages[0].content).toBe('Final answer');
+    expect(fetchSpy).not.toHaveBeenCalledWith(
       expect.stringContaining('/messages'),
-      expect.objectContaining({
-        method: 'POST',
-        headers: expect.objectContaining({
-          Prefer: 'resolution=merge-duplicates',
-        }),
-      })
+      expect.anything()
     );
   });
 
-  it('should upsert errored message when status is error', async () => {
+  it('should not dual-write errored messages to api.messages', async () => {
     const fetchSpy = vi.spyOn(global, 'fetch');
     const { result } = renderHook(() => useThreadsContext(), { wrapper });
     await waitFor(() => expect(result.current.threads).toEqual([]));
@@ -205,20 +202,16 @@ describe('ThreadContext', () => {
       },
     ];
 
+    fetchSpy.mockClear();
+
     await act(async () => {
       result.current.updateThreadMessages(threadId, messages);
     });
 
-    // Errored messages are terminal too — they persist so the failure
-    // survives a reload instead of silently vanishing.
-    expect(fetchSpy).toHaveBeenCalledWith(
+    expect(result.current.threads[0].messages[0].status).toBe('error');
+    expect(fetchSpy).not.toHaveBeenCalledWith(
       expect.stringContaining('/messages'),
-      expect.objectContaining({
-        method: 'POST',
-        headers: expect.objectContaining({
-          Prefer: 'resolution=merge-duplicates',
-        }),
-      })
+      expect.anything()
     );
   });
 
@@ -251,45 +244,57 @@ describe('ThreadContext', () => {
     consoleSpy.mockRestore();
   });
 
-  it('should fetch existing threads on mount and sort messages', async () => {
+  it('should fetch existing threads on mount and hydrate history from FastAPI', async () => {
     const mockThreads = [
       {
         id: 'thread-123',
         title: 'Existing Thread',
         updated_at: new Date().toISOString(),
-        messages: [
-          {
-            id: 'msg-2',
-            role: 'assistant',
-            content: 'World',
-            status: 'done',
-            created_at: '2024-01-01T12:00:01Z',
-          },
-          {
-            id: 'msg-1',
-            role: 'user',
-            content: 'Hello',
-            status: 'done',
-            created_at: '2024-01-01T12:00:00Z',
-          },
-        ],
       },
     ];
 
-    global.fetch = vi.fn().mockImplementation(url => {
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/threads/') && url.includes('/history')) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              messages: [
+                {
+                  id: 'msg-1',
+                  role: 'user',
+                  content: 'Hello',
+                  status: 'done',
+                  toolCalls: [],
+                },
+                {
+                  id: 'msg-2',
+                  role: 'assistant',
+                  content: 'World',
+                  status: 'done',
+                  toolCalls: [],
+                },
+              ],
+            }),
+        });
+      }
       if (url.includes('/threads')) {
         return Promise.resolve({
           ok: true,
           json: () => Promise.resolve(mockThreads),
         });
       }
-      return Promise.resolve({ ok: true });
+      return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
     });
 
     const { result } = renderHook(() => useThreadsContext(), { wrapper });
 
     await waitFor(() => {
       expect(result.current.threads).toHaveLength(1);
+    });
+
+    await waitFor(() => {
+      expect(result.current.threads[0].messages).toHaveLength(2);
     });
 
     expect(result.current.threads[0].messages[0].content).toBe('Hello');
@@ -357,24 +362,8 @@ describe('ThreadContext', () => {
     consoleSpy.mockRestore();
   });
 
-  it('should handle add message fetch errors gracefully', async () => {
-    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    let callCount = 0;
-    global.fetch = vi.fn().mockImplementation(url => {
-      callCount++;
-      if (callCount <= 2 && url.includes('/threads')) {
-        // First calls for fetching/creating threads
-        if (url.includes('?'))
-          return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
-        return Promise.resolve({ ok: true });
-      }
-      if (url.includes('/messages')) {
-        // POST /messages - simulate error
-        return Promise.reject(new Error('Add message failed'));
-      }
-      return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
-    });
-
+  it('should add a message locally without posting to api.messages', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch');
     const { result } = renderHook(() => useThreadsContext(), { wrapper });
     await waitFor(() => expect(result.current.threads).toEqual([]));
 
@@ -382,6 +371,8 @@ describe('ThreadContext', () => {
     await act(async () => {
       threadId = await result.current.createThread();
     });
+
+    fetchSpy.mockClear();
 
     const message = {
       id: 'msg-1',
@@ -395,10 +386,11 @@ describe('ThreadContext', () => {
       await result.current.addMessage(threadId, message);
     });
 
-    // Should still add locally even if persistence fails
     expect(result.current.threads[0].messages).toHaveLength(1);
-    expect(consoleSpy).toHaveBeenCalledWith('Error persisting message:', expect.any(Error));
-    consoleSpy.mockRestore();
+    expect(fetchSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining('/messages'),
+      expect.anything()
+    );
   });
 
   it('should handle update thread title fetch errors gracefully', async () => {
@@ -435,27 +427,8 @@ describe('ThreadContext', () => {
     consoleSpy.mockRestore();
   });
 
-  it('should handle update thread messages fetch errors gracefully', async () => {
-    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    let callCount = 0;
-    global.fetch = vi.fn().mockImplementation(url => {
-      callCount++;
-      if (url.includes('/threads')) {
-        if (url.includes('?id=eq')) {
-          return Promise.resolve({ ok: true });
-        }
-        if (url.includes('select=')) {
-          return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
-        }
-        return Promise.resolve({ ok: true });
-      }
-      if (url.includes('/messages')) {
-        // Simulate error when upserting finalized message
-        return Promise.reject(new Error('Upsert failed'));
-      }
-      return Promise.resolve({ ok: true });
-    });
-
+  it('should update thread messages locally without upserting api.messages', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch');
     const { result } = renderHook(() => useThreadsContext(), { wrapper });
     await waitFor(() => expect(result.current.threads).toEqual([]));
 
@@ -463,6 +436,8 @@ describe('ThreadContext', () => {
     await act(async () => {
       threadId = await result.current.createThread();
     });
+
+    fetchSpy.mockClear();
 
     const messages = [
       {
@@ -478,10 +453,11 @@ describe('ThreadContext', () => {
       result.current.updateThreadMessages(threadId, messages);
     });
 
-    // Should still update locally even if persistence fails
     expect(result.current.threads[0].messages).toHaveLength(1);
-    expect(consoleSpy).toHaveBeenCalledWith('Error upserting message:', expect.any(Error));
-    consoleSpy.mockRestore();
+    expect(fetchSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining('/messages'),
+      expect.anything()
+    );
   });
 
   it('should update active thread to first thread when deleting the active thread', async () => {

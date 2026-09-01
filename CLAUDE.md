@@ -144,6 +144,6 @@ Frontend expects `NEXT_PUBLIC_API_URL` in `frontend/.env.local` (default: `http:
 
 The backend (`backend/utils/streaming.py`) emits AG-UI protocol events (`ag-ui-protocol==0.1.21`, pinned — see `.claude/rules/protocol-version-pinning.md`) over the `/chat` SSE stream; the frontend `useSSEStream.ts` hook parses them and `Chat.tsx` consumes them:
 
-`RUN_STARTED` · `RUN_FINISHED` · `RUN_ERROR` · `STEP_STARTED` · `STEP_FINISHED` · `TEXT_MESSAGE_START/CONTENT/END` · `REASONING_MESSAGE_START/CONTENT/END` · `TOOL_CALL_START/ARGS/END/RESULT`
+`RUN_STARTED` · `RUN_FINISHED` · `RUN_ERROR` · `STEP_STARTED` · `STEP_FINISHED` · `TEXT_MESSAGE_START/CONTENT/END` · `REASONING_MESSAGE_START/CONTENT/END` · `TOOL_CALL_START/ARGS/END/RESULT` · `CUSTOM` (`name: "a2ui"` — nested 4-type A2UI tree in `value`)
 
 `RUN_FINISHED` and `RUN_ERROR` are the terminal events (`RUN_ERROR` is never followed by `RUN_FINISHED`). Payloads are camelCase JSON on the `data` field with the type name duplicated on the SSE `event:` field — a documented deviation from AG-UI's reference encoder, kept for the hand-rolled `parseSSE()` (see the pin note in `protocol-version-pinning.md`). The pre-migration vocabulary (`reasoning`/`tool_call`/`tool_result`/`answer`/`agent`/`error`/`done`) is retired.

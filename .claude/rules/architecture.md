@@ -16,11 +16,16 @@ run_agent_task → run_agent_and_stream() (async)
 
 ## File responsibilities
 
-- main.py — FastAPI app: /auth/signup, /auth/login, /chat, /health (171
-  lines — not thin; auth handlers live inline rather than their own module)
+- main.py — FastAPI app: /auth/signup, /auth/login, /chat,
+  GET /threads/{thread_id}/history, /health (auth handlers live inline
+  rather than their own module; JWT gate for history is `require_user_id`
+  in src/auth.py — do not deepen inline auth here)
 - src/agent.py — agent construction via create_agent()/get_agent() functions,
   not a module-level constant
-- utils/streaming.py — LangGraph event conversion to typed dicts
+- src/history.py — checkpointer → HistoryMessage mapper +
+  load_checkpoint_messages(); not in src/models/
+- utils/streaming.py — LangGraph event conversion to AG-UI dicts (incl. CUSTOM a2ui)
+- utils/a2ui.py — 4-type A2UI tree build + validate (used by streaming.py)
 - src/models/ — Pydantic models only (auth_models.py, chat_models.py),
   nothing else
 - src/celery_app.py — Celery config only

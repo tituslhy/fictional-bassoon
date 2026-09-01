@@ -1,11 +1,12 @@
 'use client';
 
 import { useCallback, useRef } from 'react';
-import { useThreadsContext } from '@/context/ThreadContext';
-import { useThreadStore } from '@/context/ThreadContext';
+import { useThreadsContext, useThreadStore } from '@/context/ThreadContext';
 import { useAuth } from '@/context/AuthContext';
 import { useSSEStream } from '@/hooks/useSSEStream';
 import type { SSEEvent, Thread, ThreadMessage } from '@/types';
+import type { A2UIComponentNode } from '@/lib/a2ui/schema';
+import { validateComponentTree } from '@/lib/a2ui/validator';
 import MessageList from './MessageList';
 import MessageInput from './MessageInput';
 import Sidebar from '@/components/sidebar/Sidebar';
@@ -21,10 +22,9 @@ function parseEventData<T>(raw: string): T | null {
 
 export default function Chat() {
   const storeRef = useThreadStore();
-  const { activeThreadId } = useThreadsContext();
+  const { activeThreadId, createThread } = useThreadsContext();
   const { token } = useAuth();
 
-  // Use refs for streaming state to track the active message object
   const currentAssistantRef = useRef<ThreadMessage | null>(null);
   const isStreamingRef = useRef(false);
   const streamingTargetThreadIdRef = useRef<string | null>(null);
@@ -35,8 +35,6 @@ export default function Chat() {
       const targetThreadId = streamingTargetThreadIdRef.current;
       if (!targetThreadId) return;
 
-      // Writes `msg` into the active thread's message list, creating the
-      // entry if it isn't there yet.
       const mirror = (msg: ThreadMessage) => {
         const thread = store.threads.find((t: Thread) => t.id === targetThreadId);
         if (!thread) return;
@@ -71,10 +69,6 @@ export default function Chat() {
         mirror(updated);
       };
 
-      // Finalizes the run: writes `finalMsg` into the thread, derives the
-      // thread title from the first user message if this is its first
-      // response, and resets all per-run streaming state. Shared by the
-      // RUN_FINISHED and RUN_ERROR terminal paths.
       const finalizeRun = (finalMsg: ThreadMessage) => {
         const thread = store.threads.find((t: Thread) => t.id === targetThreadId);
         if (thread) {
@@ -87,7 +81,7 @@ export default function Chat() {
           }
           store.updateThreadMessages(thread.id, msgs);
 
-          if (thread.title === 'New Thread') {
+          if (thread.title === 'New Thread' || thread.title === 'New chat') {
             const firstUser = msgs.find((m: ThreadMessage) => m.role === 'user');
             if (firstUser) {
               const title =
@@ -126,11 +120,21 @@ export default function Chat() {
           if (msg) {
             finalizeRun({ ...msg, status: 'done' as const });
           } else {
-            // Run finished without ever producing assistant content —
-            // nothing to write to the thread, just reset streaming state.
             currentAssistantRef.current = null;
             isStreamingRef.current = false;
             streamingTargetThreadIdRef.current = null;
+          }
+          return;
+        }
+
+        case 'CUSTOM': {
+          const data = parseEventData<{ name?: string; value?: A2UIComponentNode }>(event.data);
+          if (data?.name !== 'a2ui' || data.value == null) return;
+          try {
+            const tree = validateComponentTree(data.value);
+            updateAssistantMessage(msg => ({ ...msg, a2ui: tree }));
+          } catch {
+            // Invalid tree: keep the AG-UI field fallback (buildLegacyStreamTree).
           }
           return;
         }
@@ -191,11 +195,6 @@ export default function Chat() {
           return;
         }
 
-        // RUN_STARTED, STEP_STARTED/FINISHED, TEXT_MESSAGE_START/END,
-        // REASONING_MESSAGE_START/END, TOOL_CALL_END, and the *_CHUNK
-        // variants (not emitted by this backend today, see
-        // backend/utils/streaming.py) are pure lifecycle/bracket markers —
-        // no ThreadMessage state change needed for this app's rendering.
         default:
           return;
       }
@@ -203,9 +202,34 @@ export default function Chat() {
     [storeRef]
   );
 
+  const unlockIfStillStreaming = useCallback(() => {
+    if (!isStreamingRef.current) return;
+    const store = storeRef.current;
+    const targetThreadId = streamingTargetThreadIdRef.current;
+    const msg = currentAssistantRef.current;
+    if (msg && msg.status === 'streaming' && targetThreadId) {
+      const finalMsg: ThreadMessage = { ...msg, status: 'done' };
+      const thread = store.threads.find((t: Thread) => t.id === targetThreadId);
+      if (thread) {
+        const msgs = [...thread.messages];
+        const idx = msgs.findIndex((m: ThreadMessage) => m.id === finalMsg.id);
+        if (idx >= 0) {
+          msgs[idx] = finalMsg;
+        } else {
+          msgs.push(finalMsg);
+        }
+        store.updateThreadMessages(targetThreadId, msgs);
+      }
+    }
+    currentAssistantRef.current = null;
+    isStreamingRef.current = false;
+    streamingTargetThreadIdRef.current = null;
+  }, [storeRef]);
+
   const stream = useSSEStream({
     onEvent: handleMessageEvent,
     token: token,
+    onComplete: unlockIfStillStreaming,
     onError: err => {
       const store = storeRef.current;
       const reliableTargetThreadId = streamingTargetThreadIdRef.current;
@@ -226,7 +250,6 @@ export default function Chat() {
 
       currentAssistantRef.current = errorMessage;
 
-      // Mirror to store
       if (reliableTargetThreadId) {
         const thread = store.threads.find((t: Thread) => t.id === reliableTargetThreadId);
         if (thread) {
@@ -247,9 +270,15 @@ export default function Chat() {
   });
 
   const handleSend = useCallback(
-    (text: string) => {
+    async (text: string) => {
       const store = storeRef.current;
-      if (!activeThreadId || isStreamingRef.current) return;
+      if (isStreamingRef.current) return;
+
+      let threadId = activeThreadId;
+      if (!threadId) {
+        threadId = await createThread();
+      }
+      if (!threadId) return;
 
       const userMsg: ThreadMessage = {
         id: crypto.randomUUID(),
@@ -270,32 +299,41 @@ export default function Chat() {
 
       currentAssistantRef.current = assistantMsg;
       isStreamingRef.current = true;
-      streamingTargetThreadIdRef.current = activeThreadId;
+      streamingTargetThreadIdRef.current = threadId;
 
-      const thread = store.threads.find((t: Thread) => t.id === activeThreadId);
+      const thread = store.threads.find((t: Thread) => t.id === threadId);
       if (thread) {
-        store.updateThreadMessages(activeThreadId, [...thread.messages, userMsg, assistantMsg]);
+        store.updateThreadMessages(threadId, [...thread.messages, userMsg, assistantMsg]);
       }
 
-      stream.start({ message: text, thread_id: activeThreadId });
+      stream.start({ message: text, thread_id: threadId });
     },
-    [activeThreadId, stream, storeRef]
+    [activeThreadId, stream, storeRef, createThread]
   );
 
   const currentThread = storeRef.current.threads.find((t: Thread) => t.id === activeThreadId);
+  const messages = currentThread?.messages || [];
+  const isEmpty = messages.length === 0;
 
   return (
-    <div className="flex h-screen">
+    <div className="flex h-screen bg-transparent text-zinc-100">
       <Sidebar />
-      <div className="flex flex-1 flex-col min-w-0">
-        <MessageList messages={currentThread?.messages || []} isStreaming={stream.isStreaming} />
-        <div className="border-t border-[#262626]">
-          <MessageInput
-            onSend={handleSend}
-            isStreaming={stream.isStreaming}
-            isEmpty={!currentThread || currentThread.messages.length === 0}
-          />
-        </div>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-white/5 px-6">
+          <div className="min-w-0">
+            <h1 className="truncate text-sm font-medium text-zinc-100">
+              {currentThread?.title && currentThread.title !== 'New chat'
+                ? currentThread.title
+                : 'New chat'}
+            </h1>
+            <p className="text-[11px] text-zinc-500">Reasoning agent with live web search</p>
+          </div>
+          <span className="hidden shrink-0 rounded-full bg-indigo-500/10 px-2.5 py-1 text-[10px] font-medium uppercase tracking-wide text-indigo-300 ring-1 ring-indigo-400/20 sm:inline">
+            Web search
+          </span>
+        </header>
+        <MessageList messages={messages} isStreaming={stream.isStreaming} onPrompt={handleSend} />
+        <MessageInput onSend={handleSend} isStreaming={stream.isStreaming} isEmpty={isEmpty} />
       </div>
     </div>
   );
