@@ -18,39 +18,39 @@ trusting it.
 
 ## Backend AG-UI wiring — owner: `backend-agui-developer`
 
-- [~] AG-UI package/version pinned (`protocol-version-pinning.md`) — `ag-ui-protocol==0.1.21` added via `uv add`, pin recorded. Self-reported; not yet independently verified.
-- [~] Event mapping implemented in `backend/utils/streaming.py` — legacy dict vocabulary replaced with AG-UI `EventType` events (RUN_STARTED/FINISHED/ERROR, STEP_STARTED/FINISHED, TEXT_MESSAGE_*, REASONING_MESSAGE_*, TOOL_CALL_*). Self-reported; not yet independently verified.
-- [~] `worker_runner.py` / `main.py` `/chat` handling updated to publish AG-UI events — error/done paths now publish RUN_ERROR / RUN_FINISHED. Self-reported; not yet independently verified.
-- [~] `frontend/src/types/index.ts`'s `SSEEventType` union updated to match — AG-UI union added as `AGUIEventType`, with `SSEEventType` now simply `= AGUIEventType`. The transitional `LegacySSEEventType` has been deleted (see resolved integration task below); self-reported, not yet independently verified.
+- [x] AG-UI package/version pinned (`protocol-version-pinning.md`) — `ag-ui-protocol==0.1.21` added via `uv add`, pin recorded. Independently verified by `protocol-reviewer`, 2026-09-01.
+- [x] Event mapping implemented in `backend/utils/streaming.py` — legacy dict vocabulary replaced with AG-UI `EventType` events (RUN_STARTED/FINISHED/ERROR, STEP_STARTED/FINISHED, TEXT_MESSAGE_*, REASONING_MESSAGE_*, TOOL_CALL_*). Independently verified by `protocol-reviewer`, 2026-09-01.
+- [x] `worker_runner.py` / `main.py` `/chat` handling updated to publish AG-UI events — error/done paths now publish RUN_ERROR / RUN_FINISHED. Independently verified by `protocol-reviewer`, 2026-09-01.
+- [x] `frontend/src/types/index.ts`'s `SSEEventType` union updated to match — AG-UI union added as `AGUIEventType`, with `SSEEventType` now simply `= AGUIEventType`. The transitional `LegacySSEEventType` has been deleted (see resolved integration task below). Independently verified by `protocol-reviewer`, 2026-09-01.
 
-**Open integration task — RESOLVED by `frontend-a2ui-developer`, 2026-08-31:**
+**Open integration task — RESOLVED by `frontend-a2ui-developer`, 2026-08-31;
+independently verified by `protocol-reviewer`, 2026-09-01 (now `[x]`-grade):**
 the frontend consumption swap documented in the now-deleted
 `lib/a2ui/mock/legacyShim.ts` has landed. `useSSEStream.ts` and `Chat.tsx`
 parse and handle the real AG-UI vocabulary end-to-end; live chat streaming
-is no longer broken on this branch. See this file's Log for the full
-mapping and file list. Still `[~]` pending `protocol-reviewer`
-verification, per this file's own status legend — not `[x]`.
+works on this branch (live smoke test PASSED 2026-09-01 — see Log). See
+this file's Log for the full mapping and file list.
 
 ## Frontend A2UI rendering — owner: `frontend-a2ui-developer`
 
-- [~] A2UI component schema defined, allow-list started — `frontend/src/lib/a2ui/`
+- [x] A2UI component schema defined, allow-list started — `frontend/src/lib/a2ui/`
   (`schema.ts`, `allowList.ts`, `validator.ts`, `renderer.tsx`) implements a
   deliberately constrained subset of the real A2UI v1.0 spec (allow-list:
   `column`, `reasoning`, `tool_call`, `markdown` — no data binding/function
-  calls/actions). Self-reported only; not yet independently verified by
-  `protocol-reviewer`, so `[~]` not `[x]` per this file's own status legend.
-- [~] `ReasoningBlock` → A2UI component migrated — now
+  calls/actions). Independently verified by `protocol-reviewer`, 2026-09-01.
+- [x] `ReasoningBlock` → A2UI component migrated — now
   `frontend/src/lib/a2ui/components/ReasoningBlock.tsx`, dispatched via the
-  `reasoning` component type. Same caveat as above.
-- [~] `ToolCallBlock` → A2UI component migrated — now
+  `reasoning` component type. Verified by `protocol-reviewer`, 2026-09-01.
+- [x] `ToolCallBlock` → A2UI component migrated — now
   `frontend/src/lib/a2ui/components/ToolCallBlock.tsx`, dispatched via the
-  `tool_call` component type. Same caveat as above.
-- [~] `AnswerBlock` / `MarkdownSection.tsx` → A2UI component migrated —
+  `tool_call` component type. Verified by `protocol-reviewer`, 2026-09-01.
+- [x] `AnswerBlock` / `MarkdownSection.tsx` → A2UI component migrated —
   `MarkdownSection.tsx` stays at its existing path (folded in, not
   retired, per the a2ui-no-executable-ui.md instruction) and is now only
   reachable through `lib/a2ui/components/MarkdownBlock.tsx`'s `markdown`
   component type; `AnswerBlock`'s streaming-cursor behavior moved into
-  `MarkdownSection.tsx` itself via a `streaming` prop. Same caveat as above.
+  `MarkdownSection.tsx` itself via a `streaming` prop. Verified by
+  `protocol-reviewer`, 2026-09-01.
 
 Also done as part of this pass, not originally itemized above:
 - `useSSEStream.ts` gained an optional `onA2UITree` callback that builds an
@@ -89,18 +89,17 @@ this section is unchanged.
 
 ## A2A service packaging — owner: `a2a-integrator`
 
-- [~] Agent Card authored and schema-validated — `backend/src/protocol/agent_card.py`;
+- [x] Agent Card authored and schema-validated — `backend/src/protocol/agent_card.py`;
   validated by round-tripping through the pinned SDK's protobuf JSON schema
   (`google.protobuf.json_format.ParseDict`/`MessageToDict`) and served at
-  `/.well-known/agent-card.json`, confirmed via `TestClient`. Marked `[~]`
-  rather than `[x]` per the status legend — not yet independently verified
-  by `protocol-reviewer`.
-- [~] JSON-RPC router mounted on `backend/main.py` — `backend/src/protocol/router.py`
+  `/.well-known/agent-card.json`, confirmed via `TestClient` and live
+  smoke test. Independently verified by `protocol-reviewer`, 2026-09-01.
+- [x] JSON-RPC router mounted on `backend/main.py` — `backend/src/protocol/router.py`
   (`build_a2a_router() -> APIRouter`), mounted via `app.include_router(...)`
   at `POST /a2a`. Verified end-to-end with `TestClient` (`SendMessage`,
   `GetTask`, `CancelTask` against a mocked Redis pub/sub + Celery `.delay`).
-  Same `[~]` caveat as above.
-- [~] Task-state mapping (`submitted`/`working`/`completed`/`failed`) implemented —
+  Independently verified by `protocol-reviewer`, 2026-09-01.
+- [x] Task-state mapping (`submitted`/`working`/`completed`/`failed`) implemented —
   `backend/src/protocol/executor.py`'s `ChatAgentExecutor`. A2A `taskId` ==
   existing `job_id`, A2A `contextId` == existing `thread_id` (literal
   identity, not a lookup table — see `citus-thread-id-integrity.md`).
@@ -123,7 +122,8 @@ merging either worktree.
 
 ## Testing gate — owner: `unit-tester`
 
-Blocked until the three surfaces above are `[x]`.
+Completed — both coverage gates met and independently confirmed by
+`protocol-reviewer`, 2026-09-01.
 
 - [x] Frontend coverage tooling set up — `@vitest/coverage-v8` installed,
   `test:coverage` script added to `frontend/package.json`, vitest.config.ts
@@ -140,7 +140,8 @@ Blocked until the three surfaces above are `[x]`.
   session: that was a REAL production bug in utils/streaming.py that
   would have crashed any reasoning stream with a pydantic
   ValidationError; fixed in production with `role="reasoning"` instead.)
-- [~] Frontend coverage ≥90% — **ACTUAL: 93.97% statements / 95.35% lines**
+- [x] Frontend coverage ≥90% — **ACTUAL: 93.97% statements / 95.35% lines**
+  (independently re-run and confirmed by `protocol-reviewer`, 2026-09-01)
   (187 tests, 15 files, all passing; tsc + eslint clean). MET. Expanded
   Chat.test.tsx from 14 tests to 28 tests with comprehensive AG-UI event
   handling tests (TEXT_MESSAGE_CONTENT, REASONING_MESSAGE_CONTENT,
@@ -157,13 +158,38 @@ Blocked until the three surfaces above are `[x]`.
 
 ## Review gate — owner: `protocol-reviewer`
 
-Blocked until the testing gate above is `[x]`.
+Completed 2026-09-01. Reviewer findings: 0 Critical, 2 Warnings, 5
+Suggestions — see "Open decisions" below and the Log for what remains open.
 
-- [ ] Rule-file compliance checked (all ten `.claude/rules/*.md` — the
+- [x] Rule-file compliance checked (all ten `.claude/rules/*.md` — the
   earlier "seven" count was stale)
-- [ ] Coverage numbers independently re-run and confirmed
-- [ ] Test quality spot-checked (not just the percentage)
-- [ ] General code quality pass (async correctness, typing, security, streaming UX)
+- [x] Coverage numbers independently re-run and confirmed (backend 95%;
+  frontend 93.97% statements / 95.35% lines)
+- [x] Test quality spot-checked (not just the percentage)
+- [x] General code quality pass (async correctness, typing, security, streaming UX)
+
+## Open decisions — for Titus, NOT tasks and NOT done
+
+These stay open regardless of the `[x]` statuses above. Do not silently
+resolve any of them; each needs Titus's call.
+
+- Frontend `status: 'done'`-on-error bug — live-confirmed on 2026-09-01:
+  errors render nothing in the UI. `Chat.tsx` finalizes errored messages
+  with `status: 'done'` while `MessageBubble.tsx`'s `status === 'error'`
+  branch is never triggered (nothing ever sets it) and `ThreadContext.tsx`
+  only persists `status === 'done'` messages. Pre-existing
+  behavior/persistence-semantics question, deliberately not changed during
+  the vocabulary swap.
+- A2A `cancel()` unsupported (raises `UnsupportedOperationError`) and
+  `InMemoryTaskStore` is process-local (lost on restart, not shared across
+  replicas). Fixing either crosses the `legacy-stack-freeze.md` scope
+  boundary — needs an explicit decision.
+- Stale legacy-vocabulary docs: `.claude/rules/streaming-patterns.md`'s
+  emitted-event list and root `CLAUDE.md`'s "SSE event types" section still
+  document the pre-AG-UI vocabulary.
+- Optional adoption of the official `@a2ui/web_core` / `@a2ui/react`
+  packages (deliberately not installed — see
+  `protocol-version-pinning.md` for the reasons recorded at the time).
 
 ## Log
 
@@ -183,3 +209,6 @@ Blocked until the testing gate above is `[x]`.
   - Verified: `npm run lint` clean; `npx tsc --noEmit` clean (zero errors, including the 2 pre-existing ones noted in the earlier frontend-a2ui-developer log entry — no longer present); `npm run test -- --run` 45/45 passed (6 test files); `npm run build` succeeds; `npx prettier --check` clean on all touched files.
 - 2026-08-31 (`unit-tester`) — completed testing gate. **Backend: PASS** (95% coverage, exceeds 90% target). Fixed langfuse 4.5.1 compatibility in tests/test_streaming.py by patching CallbackHandler.__init__() and AG-UI ReasoningMessageStartEvent.role to accept old kwargs + auto-fill role='reasoning' (test-side only, per REWRITE_TASKS instruction). Created tests/test_protocol.py (13 tests: _agent_message, _status_event, ChatAgentExecutor.execute() happy/error/missing-id paths, enqueue_failure, cancel() UnsupportedOperationError, agent_card schema, router mounting). Coverage breakdown: src/protocol/executor.py 100%, agent_card.py 100%, router.py 100%, worker_runner.py 94%, utils/streaming.py 82%, main.py 85%, queue/redis_pubsub.py 91%. All 51 tests pass. **Frontend: PARTIAL** (49.73% overall, does not meet 90% target; task-specific requirements met). Added test:coverage script to frontend/package.json, configured vitest.config.ts with coverage provider/include/exclude. Created Chat.test.tsx (14 tests covering useSSEStream integration, AG-UI event callback, event types RUN_STARTED/FINISHED/ERROR, TEXT_MESSAGE_*, REASONING_MESSAGE_*, TOOL_CALL_*, robustness to malformed data). Created validator.test.ts (33 tests, 100% coverage of validation logic for all component types + error cases). Created allowList.test.ts (9 tests, 100% coverage). Rationale for 49.73% vs 90% target: frontend pages (login, signup, root), sidebar components (Sidebar, ThreadItem, ThreadListButton), and AuthContext have zero test coverage — reaching 90% overall would require comprehensive test suites for these, out of scope for the current task focused on Chat.tsx and lib/a2ui modules. Module-level coverage where tests exist: validator.ts, allowList.ts, useSSEStream.ts 97.56%, streamState.ts 100%, ColumnBlock.tsx 100%, events.ts 91.66%. All 99 frontend tests pass. Verified: backend `ruff check`/`mypy` clean, no new lint findings; frontend `npm run lint`/`tsc --noEmit` clean; all pre-commit hooks pass.
 - 2026-09-01 (`unit-tester`) — **Frontend coverage gate PASS — 93.97% statements / 95.35% lines** (exceeds 90% target). Expanded Chat.test.tsx to 28 tests covering handleMessageEvent AG-UI event processing (TEXT_MESSAGE_CONTENT, REASONING_MESSAGE_CONTENT, TOOL_CALL_START/ARGS/RESULT, RUN_FINISHED, RUN_ERROR) with actual store.updateThreadMessages assertions, message sending with stream.start verification, and error callback paths. Expanded ThreadContext.test.tsx with 6 error-scenario tests (fetch failures in deleteThread, addMessage, updateThreadTitle, updateThreadMessages) verifying local state updates succeed even when persistence fails. Updated REWRITE_TASKS line to mark [~] (was "NOT MET" at 72.69%/75.15%, now "MET" at 93.97%/95.35%). vitest.config.ts already properly excludes src/app/ pages with documented rationale per instruction. Verified: `npm run test:coverage` 187 tests pass (all 15 test files green), `npx tsc --noEmit` zero errors, `npm run lint` no warnings/errors. Ready for protocol-reviewer independent verification.
+- 2026-09-01 (main session) — backend fix landed: langfuse `CallbackHandler` migrated to the v4 no-kwarg API, with session info passed via LangChain config metadata instead (commit `3e23e33`) — the previous wiring made every live run fail before the agent started. Frontend coverage push committed as `3f78ca8` (187 tests, 93.97% statements / 95.35% lines, tsc + eslint clean).
+- 2026-09-01 (main session) — live end-to-end smoke test PASSED: full stack via `make up`; signup → thread → chat message → Celery → LangGraph agent → Tavily tool call → AG-UI events streamed over SSE → rendered tool-call block and markdown answer in the UI; A2A agent card serving at `/.well-known/agent-card.json`. Screenshots in `handoffs/screenshots/` (gitignored). One environment incident during testing: Docker Desktop was externally terminated twice, corrupting a running container's overlay filesystem (bogus ImportError); resolved by recreating containers — not an application bug. Live testing also confirmed the `status: 'done'`-on-error frontend bug (errors render nothing in the UI) — recorded under "Open decisions", not fixed.
+- 2026-09-01 (planner, recording `protocol-reviewer` final-gate verdict relayed by the main session) — flipped `[~]` → `[x]` on all four backend AG-UI items, all four frontend A2UI items (plus the resolved integration task note), all three A2A items, and the frontend coverage gate (93.97%/95.35% independently re-run by the reviewer); review-gate section's four items marked `[x]` (rule compliance vs all ten rule files, coverage re-run, test quality spot-check, code-quality pass — findings: 0 Critical, 2 Warnings, 5 Suggestions). Planner spot-checked repo state before flipping: no-kwarg `CallbackHandler()` present in `backend/utils/streaming.py`, `build_a2a_router()` mounted in `backend/main.py`, `test:coverage` script present in `frontend/package.json`. Added an "Open decisions — for Titus" section carrying the four unresolved items (error-status bug, A2A cancel()/InMemoryTaskStore limits, stale legacy-vocabulary docs, optional official @a2ui packages) so the all-`[x]` checklists don't read as "nothing left".
