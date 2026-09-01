@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import Chat from './Chat';
 import * as AuthContext from '@/context/AuthContext';
@@ -24,7 +24,13 @@ vi.mock('./MessageList', () => ({
 }));
 
 vi.mock('./MessageInput', () => ({
-  default: () => <div data-testid="message-input">Message Input</div>,
+  default: ({ onSend }: any) => (
+    <div data-testid="message-input">
+      <button onClick={() => onSend('test message')} data-testid="send-btn">
+        Send
+      </button>
+    </div>
+  ),
 }));
 
 vi.mock('@/components/sidebar/Sidebar', () => ({
@@ -32,11 +38,14 @@ vi.mock('@/components/sidebar/Sidebar', () => ({
 }));
 
 describe('Chat Component - Rendering and Integration', () => {
+  let mockStore: any;
+  let mockStreamStart: any;
+
   beforeEach(() => {
     vi.clearAllMocks();
 
     // Setup mock thread store
-    const mockStore = {
+    mockStore = {
       threads: [
         {
           id: 'thread_123',
@@ -47,6 +56,8 @@ describe('Chat Component - Rendering and Integration', () => {
       updateThreadMessages: vi.fn(),
       updateThreadTitle: vi.fn(),
     };
+
+    mockStreamStart = vi.fn();
 
     // Mock hooks
     (ThreadContext.useThreadsContext as any).mockReturnValue({
@@ -66,7 +77,7 @@ describe('Chat Component - Rendering and Integration', () => {
       isLoading: false,
       error: null,
       isStreaming: false,
-      start: vi.fn(),
+      start: mockStreamStart,
     });
   });
 
@@ -102,45 +113,16 @@ describe('Chat Component - Rendering and Integration', () => {
     expect(call.onError).toBeDefined();
     expect(typeof call.onError).toBe('function');
   });
-
-  it('should handle stream start with correct parameters', () => {
-    const mockStream = {
-      isLoading: false,
-      error: null,
-      isStreaming: false,
-      start: vi.fn(),
-    };
-
-    (useSSEStreamModule.useSSEStream as any).mockReturnValue(mockStream);
-
-    render(<Chat />);
-
-    // The component should be able to start the stream
-    // (we can't directly test this without interaction)
-    expect(mockStream.start).not.toHaveBeenCalled(); // Not called on render
-  });
 });
 
-describe('Chat Component - AG-UI Event Handling Logic', () => {
-  /**
-   * Note: Testing the full Chat.tsx event handling logic is complex because:
-   * 1. The component uses refs to track internal streaming state
-   * 2. Event processing happens in nested closures with captured state
-   * 3. The mirror() function synchronizes with a store mock
-   *
-   * The actual event processing is already tested in integration via:
-   * - useSSEStream.test.ts (AG-UI event parsing)
-   * - agui/events.test.ts and agui/streamState.test.ts (event structure)
-   *
-   * Here we verify the component's event callback integrates properly:
-   */
-
-  let mockEventCallback: ((event: any) => void) | null = null;
+describe('Chat Component - Message Sending', () => {
+  let mockStore: any;
+  let mockStreamStart: any;
 
   beforeEach(() => {
     vi.clearAllMocks();
 
-    const mockStore = {
+    mockStore = {
       threads: [
         {
           id: 'thread_123',
@@ -151,6 +133,8 @@ describe('Chat Component - AG-UI Event Handling Logic', () => {
       updateThreadMessages: vi.fn(),
       updateThreadTitle: vi.fn(),
     };
+
+    mockStreamStart = vi.fn();
 
     (ThreadContext.useThreadsContext as any).mockReturnValue({
       activeThreadId: 'thread_123',
@@ -164,14 +148,118 @@ describe('Chat Component - AG-UI Event Handling Logic', () => {
       token: 'test_token_123',
     });
 
-    // Capture the event callback
-    (useSSEStreamModule.useSSEStream as any).mockImplementation(({ onEvent }: any) => {
+    (useSSEStreamModule.useSSEStream as any).mockReturnValue({
+      isLoading: false,
+      error: null,
+      isStreaming: false,
+      start: mockStreamStart,
+    });
+  });
+
+  it('should send message when send button is clicked', async () => {
+    render(<Chat />);
+
+    const sendBtn = screen.getByTestId('send-btn');
+    act(() => {
+      fireEvent.click(sendBtn);
+    });
+
+    // updateThreadMessages should be called with user and assistant messages
+    await waitFor(() => {
+      expect(mockStore.updateThreadMessages).toHaveBeenCalled();
+    });
+
+    const calls = mockStore.updateThreadMessages.mock.calls;
+    const lastCall = calls[calls.length - 1];
+    const messages = lastCall[1];
+
+    // Should have both user and assistant message
+    expect(messages.length).toBe(2);
+    expect(messages[0].role).toBe('user');
+    expect(messages[0].content).toBe('test message');
+    expect(messages[1].role).toBe('assistant');
+    expect(messages[1].status).toBe('streaming');
+  });
+
+  it('should call stream.start with correct parameters', async () => {
+    render(<Chat />);
+
+    const sendBtn = screen.getByTestId('send-btn');
+    act(() => {
+      fireEvent.click(sendBtn);
+    });
+
+    await waitFor(() => {
+      expect(mockStreamStart).toHaveBeenCalledWith({
+        message: 'test message',
+        thread_id: 'thread_123',
+      });
+    });
+  });
+
+  it('should not send message when no active thread', () => {
+    (ThreadContext.useThreadsContext as any).mockReturnValue({
+      activeThreadId: null,
+    });
+
+    render(<Chat />);
+
+    mockStore.updateThreadMessages.mockClear();
+    mockStreamStart.mockClear();
+
+    const sendBtn = screen.getByTestId('send-btn');
+    act(() => {
+      fireEvent.click(sendBtn);
+    });
+
+    expect(mockStore.updateThreadMessages).not.toHaveBeenCalled();
+    expect(mockStreamStart).not.toHaveBeenCalled();
+  });
+});
+
+describe('Chat Component - AG-UI Event Handling Logic', () => {
+  let mockEventCallback: ((event: any) => void) | null = null;
+  let mockStore: any;
+  let mockStreamStart: any;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+
+    mockStore = {
+      threads: [
+        {
+          id: 'thread_123',
+          title: 'New Thread',
+          messages: [],
+        },
+      ],
+      updateThreadMessages: vi.fn(),
+      updateThreadTitle: vi.fn(),
+    };
+
+    mockStreamStart = vi.fn();
+
+    (ThreadContext.useThreadsContext as any).mockReturnValue({
+      activeThreadId: 'thread_123',
+    });
+
+    (ThreadContext.useThreadStore as any).mockReturnValue({
+      current: mockStore,
+    });
+
+    (AuthContext.useAuth as any).mockReturnValue({
+      token: 'test_token_123',
+    });
+
+    // Capture the event callback and error callback
+    (useSSEStreamModule.useSSEStream as any).mockImplementation(({ onEvent, onError }: any) => {
       mockEventCallback = onEvent;
       return {
         isLoading: false,
         error: null,
         isStreaming: false,
-        start: vi.fn(),
+        start: mockStreamStart,
+        onError,
       };
     });
   });
@@ -195,29 +283,271 @@ describe('Chat Component - AG-UI Event Handling Logic', () => {
     }).not.toThrow();
   });
 
-  it('should not crash when receiving TOOL_CALL_START without streamingTargetThreadId', () => {
+  it('should handle TEXT_MESSAGE_CONTENT event and update assistant message', async () => {
+    render(<Chat />);
+
+    // First send a message to establish streaming state
+    const sendBtn = screen.getByTestId('send-btn');
+    act(() => {
+      fireEvent.click(sendBtn);
+    });
+
+    await waitFor(() => {
+      expect(mockStore.updateThreadMessages).toHaveBeenCalled();
+    });
+
+    mockStore.updateThreadMessages.mockClear();
+
+    // Now send a TEXT_MESSAGE_CONTENT event
+    act(() => {
+      mockEventCallback?.({
+        event: 'TEXT_MESSAGE_CONTENT',
+        data: JSON.stringify({ delta: 'Hello ' }),
+      });
+    });
+
+    // Should update the assistant message with content
+    expect(mockStore.updateThreadMessages).toHaveBeenCalled();
+    const calls = mockStore.updateThreadMessages.mock.calls;
+    const lastCall = calls[calls.length - 1];
+    const messages = lastCall[1];
+    const assistantMsg = messages.find((m: any) => m.role === 'assistant');
+    expect(assistantMsg.content).toBe('Hello ');
+  });
+
+  it('should handle REASONING_MESSAGE_CONTENT event', async () => {
+    render(<Chat />);
+
+    const sendBtn = screen.getByTestId('send-btn');
+    act(() => {
+      fireEvent.click(sendBtn);
+    });
+
+    await waitFor(() => {
+      expect(mockStore.updateThreadMessages).toHaveBeenCalled();
+    });
+
+    mockStore.updateThreadMessages.mockClear();
+
+    act(() => {
+      mockEventCallback?.({
+        event: 'REASONING_MESSAGE_CONTENT',
+        data: JSON.stringify({ delta: 'Thinking... ' }),
+      });
+    });
+
+    expect(mockStore.updateThreadMessages).toHaveBeenCalled();
+    const calls = mockStore.updateThreadMessages.mock.calls;
+    const lastCall = calls[calls.length - 1];
+    const messages = lastCall[1];
+    const assistantMsg = messages.find((m: any) => m.role === 'assistant');
+    expect(assistantMsg.reasoning).toBe('Thinking... ');
+  });
+
+  it('should handle TOOL_CALL_START event', async () => {
+    render(<Chat />);
+
+    const sendBtn = screen.getByTestId('send-btn');
+    act(() => {
+      fireEvent.click(sendBtn);
+    });
+
+    await waitFor(() => {
+      expect(mockStore.updateThreadMessages).toHaveBeenCalled();
+    });
+
+    mockStore.updateThreadMessages.mockClear();
+
+    act(() => {
+      mockEventCallback?.({
+        event: 'TOOL_CALL_START',
+        data: JSON.stringify({ toolCallId: 'call_1', toolCallName: 'search' }),
+      });
+    });
+
+    expect(mockStore.updateThreadMessages).toHaveBeenCalled();
+    const calls = mockStore.updateThreadMessages.mock.calls;
+    const lastCall = calls[calls.length - 1];
+    const messages = lastCall[1];
+    const assistantMsg = messages.find((m: any) => m.role === 'assistant');
+    expect(assistantMsg.toolCalls.length).toBe(1);
+    expect(assistantMsg.toolCalls[0].id).toBe('call_1');
+    expect(assistantMsg.toolCalls[0].name).toBe('search');
+  });
+
+  it('should handle TOOL_CALL_ARGS event', async () => {
+    render(<Chat />);
+
+    const sendBtn = screen.getByTestId('send-btn');
+    act(() => {
+      fireEvent.click(sendBtn);
+    });
+
+    await waitFor(() => {
+      expect(mockStore.updateThreadMessages).toHaveBeenCalled();
+    });
+
+    mockStore.updateThreadMessages.mockClear();
+
+    // First create a tool call
+    act(() => {
+      mockEventCallback?.({
+        event: 'TOOL_CALL_START',
+        data: JSON.stringify({ toolCallId: 'call_1', toolCallName: 'search' }),
+      });
+    });
+
+    mockStore.updateThreadMessages.mockClear();
+
+    // Then send args
+    act(() => {
+      mockEventCallback?.({
+        event: 'TOOL_CALL_ARGS',
+        data: JSON.stringify({ toolCallId: 'call_1', delta: '{"query": "' }),
+      });
+    });
+
+    expect(mockStore.updateThreadMessages).toHaveBeenCalled();
+    const calls = mockStore.updateThreadMessages.mock.calls;
+    const lastCall = calls[calls.length - 1];
+    const messages = lastCall[1];
+    const assistantMsg = messages.find((m: any) => m.role === 'assistant');
+    expect(assistantMsg.toolCalls[0].args).toContain('{"query": "');
+  });
+
+  it('should handle TOOL_CALL_RESULT event', async () => {
+    render(<Chat />);
+
+    const sendBtn = screen.getByTestId('send-btn');
+    act(() => {
+      fireEvent.click(sendBtn);
+    });
+
+    await waitFor(() => {
+      expect(mockStore.updateThreadMessages).toHaveBeenCalled();
+    });
+
+    mockStore.updateThreadMessages.mockClear();
+
+    // First create a tool call
+    act(() => {
+      mockEventCallback?.({
+        event: 'TOOL_CALL_START',
+        data: JSON.stringify({ toolCallId: 'call_1', toolCallName: 'search' }),
+      });
+    });
+
+    mockStore.updateThreadMessages.mockClear();
+
+    // Then send result
+    act(() => {
+      mockEventCallback?.({
+        event: 'TOOL_CALL_RESULT',
+        data: JSON.stringify({ toolCallId: 'call_1', content: '[{"title": "Result"}]' }),
+      });
+    });
+
+    expect(mockStore.updateThreadMessages).toHaveBeenCalled();
+    const calls = mockStore.updateThreadMessages.mock.calls;
+    const lastCall = calls[calls.length - 1];
+    const messages = lastCall[1];
+    const assistantMsg = messages.find((m: any) => m.role === 'assistant');
+    expect(assistantMsg.toolCalls[0].result).toBe('[{"title": "Result"}]');
+  });
+
+  it('should not crash when receiving TOOL_CALL_ARGS without toolCallId', () => {
     render(<Chat />);
 
     expect(() => {
       mockEventCallback?.({
-        event: 'TOOL_CALL_START',
-        data: JSON.stringify({ toolCallId: 'call_1', toolCallName: 'tool' }),
+        event: 'TOOL_CALL_ARGS',
+        data: JSON.stringify({ delta: 'args' }), // missing toolCallId
       });
     }).not.toThrow();
   });
 
-  it('should not crash when receiving RUN_FINISHED', () => {
+  it('should not crash when receiving TOOL_CALL_RESULT without toolCallId', () => {
+    render(<Chat />);
+
+    expect(() => {
+      mockEventCallback?.({
+        event: 'TOOL_CALL_RESULT',
+        data: JSON.stringify({ content: 'result' }), // missing toolCallId
+      });
+    }).not.toThrow();
+  });
+
+  it('should handle RUN_FINISHED event and set status to done', async () => {
+    render(<Chat />);
+
+    const sendBtn = screen.getByTestId('send-btn');
+    act(() => {
+      fireEvent.click(sendBtn);
+    });
+
+    await waitFor(() => {
+      expect(mockStore.updateThreadMessages).toHaveBeenCalled();
+    });
+
+    mockStore.updateThreadMessages.mockClear();
+
+    act(() => {
+      mockEventCallback?.({
+        event: 'RUN_FINISHED',
+        data: JSON.stringify({}),
+      });
+    });
+
+    expect(mockStore.updateThreadMessages).toHaveBeenCalled();
+    const calls = mockStore.updateThreadMessages.mock.calls;
+    const lastCall = calls[calls.length - 1];
+    const messages = lastCall[1];
+    const assistantMsg = messages.find((m: any) => m.role === 'assistant');
+    expect(assistantMsg.status).toBe('done');
+  });
+
+  it('should handle RUN_FINISHED without prior assistant message', () => {
     render(<Chat />);
 
     expect(() => {
       mockEventCallback?.({
         event: 'RUN_FINISHED',
-        data: JSON.stringify({ threadId: 'thread_123' }),
+        data: JSON.stringify({}),
       });
     }).not.toThrow();
   });
 
-  it('should not crash when receiving RUN_ERROR', () => {
+  it('should handle RUN_ERROR event and create error message with status done', async () => {
+    render(<Chat />);
+
+    const sendBtn = screen.getByTestId('send-btn');
+    act(() => {
+      fireEvent.click(sendBtn);
+    });
+
+    await waitFor(() => {
+      expect(mockStore.updateThreadMessages).toHaveBeenCalled();
+    });
+
+    mockStore.updateThreadMessages.mockClear();
+
+    act(() => {
+      mockEventCallback?.({
+        event: 'RUN_ERROR',
+        data: JSON.stringify({ message: 'API Error' }),
+      });
+    });
+
+    expect(mockStore.updateThreadMessages).toHaveBeenCalled();
+    const calls = mockStore.updateThreadMessages.mock.calls;
+    const lastCall = calls[calls.length - 1];
+    const messages = lastCall[1];
+    const assistantMsg = messages.find((m: any) => m.role === 'assistant');
+    expect(assistantMsg.status).toBe('done');
+    expect(assistantMsg.error).toBe('API Error');
+  });
+
+  it('should handle RUN_ERROR event without prior assistant message', () => {
     render(<Chat />);
 
     expect(() => {
@@ -226,6 +556,44 @@ describe('Chat Component - AG-UI Event Handling Logic', () => {
         data: JSON.stringify({ message: 'Test error' }),
       });
     }).not.toThrow();
+  });
+
+  it('should update thread title from first user message on RUN_FINISHED', async () => {
+    mockStore.threads[0].messages = [
+      {
+        id: 'user_1',
+        role: 'user',
+        content: 'This is a very long message that should be truncated to 40 characters here',
+        status: 'done',
+        toolCalls: [],
+      },
+    ];
+
+    render(<Chat />);
+
+    const sendBtn = screen.getByTestId('send-btn');
+    act(() => {
+      fireEvent.click(sendBtn);
+    });
+
+    await waitFor(() => {
+      expect(mockStore.updateThreadMessages).toHaveBeenCalled();
+    });
+
+    mockStore.updateThreadTitle.mockClear();
+    mockStore.updateThreadMessages.mockClear();
+
+    act(() => {
+      mockEventCallback?.({
+        event: 'RUN_FINISHED',
+        data: JSON.stringify({}),
+      });
+    });
+
+    expect(mockStore.updateThreadTitle).toHaveBeenCalledWith(
+      'thread_123',
+      'This is a very long message that should ...'
+    );
   });
 
   it('should handle malformed JSON in event data', () => {
@@ -278,14 +646,112 @@ describe('Chat Component - AG-UI Event Handling Logic', () => {
       });
 
       mockEventCallback?.({
-        event: 'TOOL_CALL_ARGS',
-        data: JSON.stringify({ delta: 'args' }), // missing toolCallId
-      });
-
-      mockEventCallback?.({
         event: 'RUN_ERROR',
         data: JSON.stringify({}), // missing message
       });
     }).not.toThrow();
+  });
+});
+
+describe('Chat Component - Error Handling', () => {
+  let mockStore: any;
+  let mockStreamStart: any;
+  let mockErrorCallback: ((error: string) => void) | null = null;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+
+    mockStore = {
+      threads: [
+        {
+          id: 'thread_123',
+          title: 'New Thread',
+          messages: [],
+        },
+      ],
+      updateThreadMessages: vi.fn(),
+      updateThreadTitle: vi.fn(),
+    };
+
+    mockStreamStart = vi.fn();
+
+    (ThreadContext.useThreadsContext as any).mockReturnValue({
+      activeThreadId: 'thread_123',
+    });
+
+    (ThreadContext.useThreadStore as any).mockReturnValue({
+      current: mockStore,
+    });
+
+    (AuthContext.useAuth as any).mockReturnValue({
+      token: 'test_token_123',
+    });
+
+    // Capture both onEvent and onError callbacks
+    (useSSEStreamModule.useSSEStream as any).mockImplementation(({ onEvent, onError }: any) => {
+      mockErrorCallback = onError;
+      return {
+        isLoading: false,
+        error: null,
+        isStreaming: false,
+        start: mockStreamStart,
+      };
+    });
+  });
+
+  it('should handle stream error with existing assistant message', async () => {
+    render(<Chat />);
+
+    const sendBtn = screen.getByTestId('send-btn');
+    act(() => {
+      fireEvent.click(sendBtn);
+    });
+
+    await waitFor(() => {
+      expect(mockStore.updateThreadMessages).toHaveBeenCalled();
+    });
+
+    mockStore.updateThreadMessages.mockClear();
+
+    act(() => {
+      mockErrorCallback?.('Connection failed');
+    });
+
+    expect(mockStore.updateThreadMessages).toHaveBeenCalled();
+    const calls = mockStore.updateThreadMessages.mock.calls;
+    const lastCall = calls[calls.length - 1];
+    const messages = lastCall[1];
+    const assistantMsg = messages.find((m: any) => m.role === 'assistant');
+    expect(assistantMsg.status).toBe('done');
+    expect(assistantMsg.error).toBe('Connection failed');
+  });
+
+  it('should handle stream error without prior assistant message', () => {
+    render(<Chat />);
+
+    expect(() => {
+      mockErrorCallback?.('Network error');
+    }).not.toThrow();
+  });
+
+  it('should handle stream error and update store when thread exists', async () => {
+    render(<Chat />);
+
+    const sendBtn = screen.getByTestId('send-btn');
+    act(() => {
+      fireEvent.click(sendBtn);
+    });
+
+    await waitFor(() => {
+      expect(mockStore.updateThreadMessages).toHaveBeenCalled();
+    });
+
+    mockStore.updateThreadMessages.mockClear();
+
+    act(() => {
+      mockErrorCallback?.('Stream interrupted');
+    });
+
+    expect(mockStore.updateThreadMessages).toHaveBeenCalled();
   });
 });

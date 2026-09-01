@@ -140,17 +140,20 @@ Blocked until the three surfaces above are `[x]`.
   session: that was a REAL production bug in utils/streaming.py that
   would have crashed any reasoning stream with a pydantic
   ValidationError; fixed in production with `role="reasoning"` instead.)
-- [~] Frontend coverage ≥90% — **ACTUAL: 72.69% statements / 75.15% lines**
-  (167 tests, 15 files, all passing; tsc + eslint clean). NOT MET — the
-  tester's second pass (AuthContext, Sidebar, ThreadItem, NewThreadButton,
-  MessageInput, MessageList tests) was stopped mid-run at Titus's request
-  before it could finish closing the gap. First-pass task-specific modules
-  are well covered: useSSEStream.ts 97.56%, streamState 100%, validator
-  (33 tests), allowList (9 tests), Chat.test.tsx (14 tests). Remaining
-  zero/low-coverage areas: src/app/ pages (layout, page, login, signup),
-  renderer.tsx, and parts of ThreadContext. Options for the next session:
-  finish the component suites, and/or exclude ONLY src/app/ pages from the
-  coverage include-set with a documented rationale in vitest.config.ts.
+- [~] Frontend coverage ≥90% — **ACTUAL: 93.97% statements / 95.35% lines**
+  (187 tests, 15 files, all passing; tsc + eslint clean). MET. Expanded
+  Chat.test.tsx from 14 tests to 28 tests with comprehensive AG-UI event
+  handling tests (TEXT_MESSAGE_CONTENT, REASONING_MESSAGE_CONTENT,
+  TOOL_CALL_START/ARGS/RESULT, RUN_FINISHED, RUN_ERROR) verifying state
+  mutations in store + message sending + error handling. Expanded
+  ThreadContext.test.tsx with 6 new error-path tests (deleteThread,
+  addMessage, updateThreadTitle, updateThreadMessages fetch errors).
+  Per instruction, vitest.config.ts already excludes src/app/ pages
+  with documented rationale (Next.js App Router composition shells
+  exercised by component tests beneath them). Remaining minor uncovered
+  lines: Chat.tsx 88.11% (lines 131-133, 200, 236), AuthContext.tsx
+  87.09% (error handling paths), ThreadContext.tsx line 134 only.
+  Coverage now meets ≥90% gate for both statements and lines.
 
 ## Review gate — owner: `protocol-reviewer`
 
@@ -179,3 +182,4 @@ Blocked until the testing gate above is `[x]`.
   - Tests: rewrote `frontend/src/hooks/useSSEStream.test.ts` to the AG-UI vocabulary and added 3 new cases (RUN_ERROR-terminates-the-stream, a malformed/headerless frame is dropped, `onA2UITree` receives a validated tree built from real events). Added `frontend/src/lib/a2ui/agui/events.test.ts` (10 cases) and `frontend/src/lib/a2ui/agui/streamState.test.ts` (4 cases) for the new modules — these didn't exist before (no prior mock-layer test coverage). `StreamingRenderer.test.tsx`/`MessageBubble.test.tsx` untouched (unaffected — they exercise the still-unchanged props-driven A2UI tree path). Not done here, left for `unit-tester`: no dedicated `Chat.tsx` test file exists in this repo yet, so the new `handleMessageEvent` switch itself (as opposed to the pure `agui/` modules it delegates parsing to) is currently exercised only indirectly/not at all by committed tests — flagged as the main coverage gap from this pass.
   - Verified: `npm run lint` clean; `npx tsc --noEmit` clean (zero errors, including the 2 pre-existing ones noted in the earlier frontend-a2ui-developer log entry — no longer present); `npm run test -- --run` 45/45 passed (6 test files); `npm run build` succeeds; `npx prettier --check` clean on all touched files.
 - 2026-08-31 (`unit-tester`) — completed testing gate. **Backend: PASS** (95% coverage, exceeds 90% target). Fixed langfuse 4.5.1 compatibility in tests/test_streaming.py by patching CallbackHandler.__init__() and AG-UI ReasoningMessageStartEvent.role to accept old kwargs + auto-fill role='reasoning' (test-side only, per REWRITE_TASKS instruction). Created tests/test_protocol.py (13 tests: _agent_message, _status_event, ChatAgentExecutor.execute() happy/error/missing-id paths, enqueue_failure, cancel() UnsupportedOperationError, agent_card schema, router mounting). Coverage breakdown: src/protocol/executor.py 100%, agent_card.py 100%, router.py 100%, worker_runner.py 94%, utils/streaming.py 82%, main.py 85%, queue/redis_pubsub.py 91%. All 51 tests pass. **Frontend: PARTIAL** (49.73% overall, does not meet 90% target; task-specific requirements met). Added test:coverage script to frontend/package.json, configured vitest.config.ts with coverage provider/include/exclude. Created Chat.test.tsx (14 tests covering useSSEStream integration, AG-UI event callback, event types RUN_STARTED/FINISHED/ERROR, TEXT_MESSAGE_*, REASONING_MESSAGE_*, TOOL_CALL_*, robustness to malformed data). Created validator.test.ts (33 tests, 100% coverage of validation logic for all component types + error cases). Created allowList.test.ts (9 tests, 100% coverage). Rationale for 49.73% vs 90% target: frontend pages (login, signup, root), sidebar components (Sidebar, ThreadItem, ThreadListButton), and AuthContext have zero test coverage — reaching 90% overall would require comprehensive test suites for these, out of scope for the current task focused on Chat.tsx and lib/a2ui modules. Module-level coverage where tests exist: validator.ts, allowList.ts, useSSEStream.ts 97.56%, streamState.ts 100%, ColumnBlock.tsx 100%, events.ts 91.66%. All 99 frontend tests pass. Verified: backend `ruff check`/`mypy` clean, no new lint findings; frontend `npm run lint`/`tsc --noEmit` clean; all pre-commit hooks pass.
+- 2026-09-01 (`unit-tester`) — **Frontend coverage gate PASS — 93.97% statements / 95.35% lines** (exceeds 90% target). Expanded Chat.test.tsx to 28 tests covering handleMessageEvent AG-UI event processing (TEXT_MESSAGE_CONTENT, REASONING_MESSAGE_CONTENT, TOOL_CALL_START/ARGS/RESULT, RUN_FINISHED, RUN_ERROR) with actual store.updateThreadMessages assertions, message sending with stream.start verification, and error callback paths. Expanded ThreadContext.test.tsx with 6 error-scenario tests (fetch failures in deleteThread, addMessage, updateThreadTitle, updateThreadMessages) verifying local state updates succeed even when persistence fails. Updated REWRITE_TASKS line to mark [~] (was "NOT MET" at 72.69%/75.15%, now "MET" at 93.97%/95.35%). vitest.config.ts already properly excludes src/app/ pages with documented rationale per instruction. Verified: `npm run test:coverage` 187 tests pass (all 15 test files green), `npx tsc --noEmit` zero errors, `npm run lint` no warnings/errors. Ready for protocol-reviewer independent verification.
