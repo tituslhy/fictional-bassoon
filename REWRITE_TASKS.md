@@ -13,7 +13,8 @@ The AG-UI / A2UI / A2A rewrite landed 2026-09-01 (reviewer-verified, live
 smoke test passed). That tracker is gone; git history still has it. This
 file tracks the next batch: hydrate the chat UI from the LangGraph
 checkpointer, two logic breaks from the 2026-09-01 code review, real
-Citus sharding, and root README mermaid rendering.
+Citus sharding, root README mermaid rendering, and A2UI as a
+wire protocol (agent-emitted UI JSON), not only a frontend adapter.
 
 ## Status legend
 
@@ -153,6 +154,46 @@ picture.
 - [ ] Glance at `frontend/README.md` / `backend/README.md` mermaid
       blocks for the same failure class.
 
+## 6. A2UI over the wire — agent JSON → frontend renderer
+
+Do **not** start this until Titus says so. Tracker only.
+
+The point of A2UI is the agent returns declarative UI (component-tree
+JSON) and the host renders it from an allow-list. That is **not** what
+happens today.
+
+Checked 2026-09-01:
+
+- Backend (`streaming.py`, agent, A2A) never emits an A2UI tree. The
+  wire is AG-UI only (`TEXT_MESSAGE_*`, `REASONING_*`, `TOOL_CALL_*`).
+  No `CUSTOM` (or other) event carries component JSON. Grep of
+  `backend/` for A2UI / component-tree: zero hits.
+- Frontend **can** render a tree: `validateComponentTree` +
+  `A2UIRenderer` for the four allow-listed types (`column` /
+  `reasoning` / `tool_call` / `markdown`). Tests cover this.
+- Chat does not consume a tree from the stream. `StreamingRenderer`
+  **builds** a tree locally via `buildLegacyStreamTree` from
+  `ThreadMessage` props. `useSSEStream`'s `onA2UITree` is the same
+  trick (reduce AG-UI frames → tree) and `Chat.tsx` does not pass it.
+- Real A2UI v1.0 surface protocol (`updateComponents`, data binding,
+  actions) was deliberately not implemented (`schema.ts`). Even a
+  future wire payload would be this nested 4-type subset, not the
+  full spec, unless that decision is revisited.
+
+So: renderer yes; agent→JSON→renderer no. A2UI is a rendering
+adapter over AG-UI, not a protocol the agent speaks.
+
+When picked up (needs a shape decision first): how a tree rides SSE
+without breaking `sse-transport-lock.md` / the AG-UI vocabulary
+(e.g. AG-UI `CUSTOM` vs a parallel channel). Backend must emit;
+`Chat.tsx` must render `A2UIRenderer` from that payload instead of
+(or in addition to) `buildLegacyStreamTree`.
+
+- [ ] Agent/backend can emit a validated A2UI component tree on the
+      existing `/chat` SSE stream.
+- [ ] `Chat.tsx` / `StreamingRenderer` render that tree rather than
+      only synthesizing one from AG-UI text/tool fields.
+
 ## Open decisions — for Titus, NOT tasks and NOT done
 
 These stay open regardless of the `[ ]` statuses above. Do not silently
@@ -182,3 +223,6 @@ resolve any of them; each needs Titus's call.
   `citus_get_active_worker_nodes` smoke still open.
 - 2026-09-01 — Titus: root README mermaid does not render. Added as
   task 5 (tracker only — do not fix until he says so).
+- 2026-09-01 — Titus asked whether A2UI can carry agent-emitted UI JSON
+  to the frontend. Checked: renderer exists, wire does not. Added as
+  task 6 (tracker only).
