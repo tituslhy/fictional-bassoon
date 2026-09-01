@@ -517,7 +517,7 @@ describe('Chat Component - AG-UI Event Handling Logic', () => {
     }).not.toThrow();
   });
 
-  it('should handle RUN_ERROR event and create error message with status done', async () => {
+  it('should handle RUN_ERROR event and create error message with status error', async () => {
     render(<Chat />);
 
     const sendBtn = screen.getByTestId('send-btn');
@@ -543,7 +543,7 @@ describe('Chat Component - AG-UI Event Handling Logic', () => {
     const lastCall = calls[calls.length - 1];
     const messages = lastCall[1];
     const assistantMsg = messages.find((m: any) => m.role === 'assistant');
-    expect(assistantMsg.status).toBe('done');
+    expect(assistantMsg.status).toBe('error');
     expect(assistantMsg.error).toBe('API Error');
   });
 
@@ -722,7 +722,7 @@ describe('Chat Component - Error Handling', () => {
     const lastCall = calls[calls.length - 1];
     const messages = lastCall[1];
     const assistantMsg = messages.find((m: any) => m.role === 'assistant');
-    expect(assistantMsg.status).toBe('done');
+    expect(assistantMsg.status).toBe('error');
     expect(assistantMsg.error).toBe('Connection failed');
   });
 

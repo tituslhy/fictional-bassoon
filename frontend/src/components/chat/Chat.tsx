@@ -5,7 +5,7 @@ import { useThreadsContext } from '@/context/ThreadContext';
 import { useThreadStore } from '@/context/ThreadContext';
 import { useAuth } from '@/context/AuthContext';
 import { useSSEStream } from '@/hooks/useSSEStream';
-import type { SSEEvent, ThreadMessage } from '@/types';
+import type { SSEEvent, Thread, ThreadMessage } from '@/types';
 import MessageList from './MessageList';
 import MessageInput from './MessageInput';
 import Sidebar from '@/components/sidebar/Sidebar';
@@ -38,10 +38,10 @@ export default function Chat() {
       // Writes `msg` into the active thread's message list, creating the
       // entry if it isn't there yet.
       const mirror = (msg: ThreadMessage) => {
-        const thread = store.threads.find((t: any) => t.id === targetThreadId);
+        const thread = store.threads.find((t: Thread) => t.id === targetThreadId);
         if (!thread) return;
         const msgs = [...thread.messages];
-        const idx = msgs.findIndex((m: any) => m.id === msg.id);
+        const idx = msgs.findIndex((m: ThreadMessage) => m.id === msg.id);
         if (idx >= 0) {
           msgs[idx] = msg;
         } else {
@@ -76,10 +76,10 @@ export default function Chat() {
       // response, and resets all per-run streaming state. Shared by the
       // RUN_FINISHED and RUN_ERROR terminal paths.
       const finalizeRun = (finalMsg: ThreadMessage) => {
-        const thread = store.threads.find((t: any) => t.id === targetThreadId);
+        const thread = store.threads.find((t: Thread) => t.id === targetThreadId);
         if (thread) {
           const msgs = [...thread.messages];
-          const idx = msgs.findIndex((m: any) => m.id === finalMsg.id);
+          const idx = msgs.findIndex((m: ThreadMessage) => m.id === finalMsg.id);
           if (idx >= 0) {
             msgs[idx] = finalMsg;
           } else {
@@ -88,7 +88,7 @@ export default function Chat() {
           store.updateThreadMessages(thread.id, msgs);
 
           if (thread.title === 'New Thread') {
-            const firstUser = msgs.find((m: any) => m.role === 'user');
+            const firstUser = msgs.find((m: ThreadMessage) => m.role === 'user');
             if (firstUser) {
               const title =
                 firstUser.content.slice(0, 40) + (firstUser.content.length > 40 ? '...' : '');
@@ -107,14 +107,14 @@ export default function Chat() {
           const message = data?.message ?? event.data;
           const assistantMsg = currentAssistantRef.current;
           const errorMessage: ThreadMessage = assistantMsg
-            ? { ...assistantMsg, status: 'done' as const, error: message }
+            ? { ...assistantMsg, status: 'error' as const, error: message }
             : {
                 id: crypto.randomUUID(),
                 role: 'assistant' as const,
                 content: '',
                 reasoning: '',
                 toolCalls: [],
-                status: 'done' as const,
+                status: 'error' as const,
                 error: message,
               };
           finalizeRun(errorMessage);
@@ -213,14 +213,14 @@ export default function Chat() {
       const assistantMsg = currentAssistantRef.current;
 
       const errorMessage: ThreadMessage = assistantMsg
-        ? { ...assistantMsg, status: 'done' as const, error: err }
+        ? { ...assistantMsg, status: 'error' as const, error: err }
         : {
             id: crypto.randomUUID(),
             role: 'assistant' as const,
             content: '',
             reasoning: '',
             toolCalls: [],
-            status: 'done' as const,
+            status: 'error' as const,
             error: err,
           };
 
@@ -228,10 +228,10 @@ export default function Chat() {
 
       // Mirror to store
       if (reliableTargetThreadId) {
-        const thread = store.threads.find((t: any) => t.id === reliableTargetThreadId);
+        const thread = store.threads.find((t: Thread) => t.id === reliableTargetThreadId);
         if (thread) {
           const msgs = [...thread.messages];
-          const idx = msgs.findIndex((m: any) => m.id === errorMessage.id);
+          const idx = msgs.findIndex((m: ThreadMessage) => m.id === errorMessage.id);
           if (idx >= 0) {
             msgs[idx] = errorMessage;
           } else {
@@ -272,7 +272,7 @@ export default function Chat() {
       isStreamingRef.current = true;
       streamingTargetThreadIdRef.current = activeThreadId;
 
-      const thread = store.threads.find((t: any) => t.id === activeThreadId);
+      const thread = store.threads.find((t: Thread) => t.id === activeThreadId);
       if (thread) {
         store.updateThreadMessages(activeThreadId, [...thread.messages, userMsg, assistantMsg]);
       }
@@ -282,7 +282,7 @@ export default function Chat() {
     [activeThreadId, stream, storeRef]
   );
 
-  const currentThread = storeRef.current.threads.find((t: any) => t.id === activeThreadId);
+  const currentThread = storeRef.current.threads.find((t: Thread) => t.id === activeThreadId);
 
   return (
     <div className="flex h-screen">

@@ -184,6 +184,44 @@ describe('ThreadContext', () => {
     );
   });
 
+  it('should upsert errored message when status is error', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch');
+    const { result } = renderHook(() => useThreadsContext(), { wrapper });
+    await waitFor(() => expect(result.current.threads).toEqual([]));
+
+    let threadId: string = '';
+    await act(async () => {
+      threadId = await result.current.createThread();
+    });
+
+    const messages = [
+      {
+        id: 'm1',
+        role: 'assistant' as const,
+        content: '',
+        status: 'error' as const,
+        error: 'agent run failed',
+        toolCalls: [],
+      },
+    ];
+
+    await act(async () => {
+      result.current.updateThreadMessages(threadId, messages);
+    });
+
+    // Errored messages are terminal too — they persist so the failure
+    // survives a reload instead of silently vanishing.
+    expect(fetchSpy).toHaveBeenCalledWith(
+      expect.stringContaining('/messages'),
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          Prefer: 'resolution=merge-duplicates',
+        }),
+      })
+    );
+  });
+
   it('should handle unauthenticated state', async () => {
     currentMockAuth = mockAuthEmpty;
     const { result } = renderHook(() => useThreadsContext(), { wrapper });

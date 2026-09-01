@@ -220,7 +220,10 @@ export function ThreadProvider({ children }: { children: ReactNode }) {
       // In a real production app, we might want to debounced-sync the final state
       if (token) {
         const lastMsg = messages[messages.length - 1];
-        if (lastMsg && lastMsg.status === 'done') {
+        // Persist any terminal message — errored runs included, so a failed
+        // reply survives reload instead of silently vanishing (the DB's
+        // status CHECK already allows 'error').
+        if (lastMsg && (lastMsg.status === 'done' || lastMsg.status === 'error')) {
           // Upsert the finalized message
           fetch(`${DB_BASE}/messages`, {
             method: 'POST',
