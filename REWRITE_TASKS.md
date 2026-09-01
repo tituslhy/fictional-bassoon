@@ -12,7 +12,8 @@ trusting it.
 The AG-UI / A2UI / A2A rewrite landed 2026-09-01 (reviewer-verified, live
 smoke test passed). That tracker is gone; git history still has it. This
 file tracks the next batch: hydrate the chat UI from the LangGraph
-checkpointer, plus two logic breaks found in the 2026-09-01 code review.
+checkpointer, two logic breaks from the 2026-09-01 code review, and real
+Citus sharding.
 
 ## Status legend
 
@@ -97,6 +98,32 @@ Owner: backend `/chat` timeout (touches `backend/main.py`); frontend
 `Chat.tsx` / `useSSEStream.ts` unlock. `/chat` timeout must not change
 the AG-UI terminal contract (`RUN_ERROR` is terminal on its own).
 
+## 4. Real Citus sharding — workers join, tables distribute
+
+Titus 2026-09-01: yes, we want real sharding. The coordinator + 2 worker
+containers already ran; they never formed a cluster.
+
+- [~] Register workers at FastAPI startup (`citus_set_coordinator_host` +
+      idempotent `citus_add_node` from `CITUS_WORKER_NODES`). No new
+      compose service. Backend waits on both workers healthy.
+- [~] `api.users` as a **reference table**; `api.threads` distributed by
+      `id`; `api.messages` distributed by `thread_id` and colocated.
+      Messages PK is `(thread_id, id)` (Citus unique-constraint rule);
+      existing volumes with PK `(id)` are migrated on bootstrap.
+- [~] LangGraph checkpoint tables distributed by `thread_id`, colocated
+      with each other. If Citus still rejects LangGraph's `jsonb_each_text`
+      subquery, bootstrap logs and leaves them local instead of failing
+      the API schema.
+- [ ] Live smoke after `make up`: `SELECT * FROM citus_get_active_worker_nodes()`
+      returns both workers; `pg_dist_partition` lists `api.threads` /
+      `api.messages`; a chat round-trip still checkpointers.
+
+Owner: `db_bootstrap.py` + compose env. Docs in
+`citus-thread-id-integrity.md`. Existing volumes: first backend start after
+this change runs the PK migration + `create_distributed_table` (moves
+data onto workers). A wipe (`make clean`) is the nuclear option, not
+required.
+
 ## Open decisions — for Titus, NOT tasks and NOT done
 
 These stay open regardless of the `[ ]` statuses above. Do not silently
@@ -111,15 +138,6 @@ resolve any of them; each needs Titus's call.
   `protocol-version-pinning.md`).
 - Actual LangGraph time-travel UI (list checkpoints, restore a parent,
   fork a thread) — explicitly **not** part of task 1.
-- **Citus distribution is not enabled.** Coordinator + 2 worker
-  containers run (`citusdata/citus:13.0`), and every table is *keyed* by
-  `thread_id`, but nothing is sharded: there is no `citus_add_node` /
-  `master_add_node` anywhere, and no `create_distributed_table` anywhere.
-  The workers never join the cluster; all app traffic hits the
-  coordinator like a single Postgres. Checkpoint tables are also
-  deliberately local because of a documented Citus/LangGraph
-  `jsonb_each_text` incompatibility (`.claude/rules/citus-thread-id-integrity.md`).
-  Turning distribution on is a separate decision, not folded into 1–3.
 
 ## Log
 
@@ -129,3 +147,7 @@ resolve any of them; each needs Titus's call.
   truth, (2) streaming cursor only on the in-progress message, (3) `/chat`
   dead-worker idle timeout + `isStreamingRef` unlock. Citus
   not-actually-distributed recorded under Open decisions, not as a task.
+- 2026-09-01 — Titus: turn Citus into a real cluster (task 4). Bootstrap
+  now registers workers and distributes `api.*` (plus checkpoint tables
+  with a local fallback). Open decision removed. Live
+  `citus_get_active_worker_nodes` smoke still open.

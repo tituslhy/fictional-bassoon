@@ -107,7 +107,7 @@ hooks phase.
 
 ## Key infrastructure details
 
-- **Database**: PostgreSQL with Citus extension. Schema in `backend/src/db_bootstrap.py` (api.users, api.threads, api.messages with Row-Level Security) plus LangGraph checkpoint tables in `backend/docker/citus/init.sql`, both keyed by `thread_id` — see `citus-thread-id-integrity.md` for the current (non-)distribution state before assuming this is sharded. Connection pooling via PgBouncer on port 6432.
+- **Database**: PostgreSQL with Citus. Coordinator + 2 workers; FastAPI bootstrap registers the workers and shards `api.threads` / `api.messages` by `thread_id` (`api.users` is a reference table). LangGraph checkpoint tables are distributed by `thread_id` as well, with a local fallback if Citus still rejects LangGraph's `jsonb_each_text` query — see `citus-thread-id-integrity.md`. Connection pooling via PgBouncer on port 6432.
 - **Broker**: RabbitMQ (`BROKER_URL`). Celery result backend is Redis.
 - **Redis**: Sentinel cluster (3 nodes + 3 sentinels) for HA. `redis_pubsub.py` supports Sentinel mode via `REDIS_SENTINEL_HOSTS`.
 - **Observability**: Langfuse for LLM traces, Prometheus + Grafana + Loki + Tempo (LGTM stack). Celery worker starts a Prometheus metrics server on startup.

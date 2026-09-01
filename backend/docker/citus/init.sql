@@ -1,8 +1,10 @@
--- Create LangGraph tables (latest schema for langgraph-checkpoint-postgres)
--- We create them here but we DO NOT distribute them via Citus.
--- Reasoning: Citus has a known issue with LangGraph's correlated subqueries
--- involving jsonb_each_text on distributed tables (InternalError: invalid attnum).
--- These remain as standard local tables on the coordinator node.
+-- Create LangGraph tables (latest schema for langgraph-checkpoint-postgres).
+-- Worker registration and create_distributed_table run at FastAPI startup
+-- (backend/src/db_bootstrap.py) because this file executes before worker
+-- containers are reachable. Checkpoint tables are distributed by thread_id
+-- and colocated with each other; if Citus still rejects LangGraph's
+-- jsonb_each_text correlated subquery, bootstrap leaves them local rather
+-- than failing the API schema. See .claude/rules/citus-thread-id-integrity.md.
 
 -- IMPORTANT: We use the 'public' schema for LangGraph, but we must ensure it
 -- doesn't conflict with Langfuse. Langfuse will be forced into its own schema.
@@ -80,17 +82,18 @@ CREATE TABLE IF NOT EXISTS api.threads (
 );
 
 -- 4. Create messages table
-CREATE TABLE IF NOT EXISTS api.messages (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  thread_id UUID NOT NULL REFERENCES api.threads(id) ON DELETE CASCADE,
-  role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
-  content TEXT NOT NULL,
-  reasoning TEXT,
-  tool_calls JSONB DEFAULT '[]'::jsonb,
-  status TEXT DEFAULT 'done' CHECK (status IN ('streaming', 'done', 'error')),
-  error TEXT,
-  created_at TIMESTAMPTZ DEFAULT now()
-);
+    CREATE TABLE IF NOT EXISTS api.messages (
+      id UUID NOT NULL DEFAULT gen_random_uuid(),
+      thread_id UUID NOT NULL REFERENCES api.threads(id) ON DELETE CASCADE,
+      role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+      content TEXT NOT NULL,
+      reasoning TEXT,
+      tool_calls JSONB DEFAULT '[]'::jsonb,
+      status TEXT DEFAULT 'done' CHECK (status IN ('streaming', 'done', 'error')),
+      error TEXT,
+      created_at TIMESTAMPTZ DEFAULT now(),
+      PRIMARY KEY (thread_id, id)
+    );
 
 -- 5. Create roles for PostgREST
 -- Use DO blocks to handle existing roles gracefully

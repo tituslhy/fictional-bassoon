@@ -122,7 +122,7 @@ docker compose down
 
 The Docker setup includes:
 
-- **Citus Cluster** — distributed state persistence
+- **Citus Cluster** — coordinator + 2 workers; `api.threads` / `api.messages` sharded by `thread_id` at FastAPI bootstrap
 - **Redis Sentinel Cluster** — high-availability pub/sub, task queuing, and caching
 - **Clickhouse Cluster** — high-performance analytics for observability
 - **Minio** — S3-compatible object storage for observability data

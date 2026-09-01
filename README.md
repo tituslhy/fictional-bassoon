@@ -226,8 +226,8 @@ The same pipeline is reachable by other agents over **A2A**: a JSON-RPC `SendMes
 - **Dual PgBouncer Pools (Transaction + Session)**
   Optimizes database connectivity by separating short-lived API queries from long-lived agent state connections.
 
-- **Citus-ready Data Layer**
-  Runs a coordinator + 2-worker Citus cluster with all tables keyed by `thread_id` as the intended shard key — but distribution is **not yet enabled** (no `create_distributed_table` calls; the LangGraph checkpoint tables are deliberately local due to a documented Citus/LangGraph `jsonb_each_text` incompatibility — see `.claude/rules/citus-thread-id-integrity.md`).
+- **Citus sharded by `thread_id`**
+  Coordinator + 2 workers. FastAPI startup registers the workers (`citus_add_node`) and distributes `api.threads` by `id`, `api.messages` by `thread_id` (colocated), and `api.users` as a reference table. LangGraph checkpoint tables are distributed by `thread_id` too; if Citus still rejects LangGraph's `jsonb_each_text` subquery they stay local on the coordinator (see `.claude/rules/citus-thread-id-integrity.md`).
 
 - **Langfuse Observability & Clickhouse**
   Provides deep tracing of agent trajectories, token usage analysis, and detailed execution logs for production debugging. Langfuse utilizes Redis/Valkey for asynchronous event queuing (via BullMQ), API key validation, and prompt caching.
