@@ -80,19 +80,19 @@ async def stream_agent_events(agent, request) -> AsyncGenerator[dict, None]:
     agent completes successfully, or ``RUN_ERROR`` on exception (not both —
     ``RUN_ERROR`` is a terminal outcome in its own right).
     """
-    # Create a per-request CallbackHandler using the shared singleton client.
-    # This allows us to set request-specific session_id and metadata without
-    # re-initializing the entire SDK.
-    langfuse_handler = CallbackHandler(
-        langfuse=langfuse_client,
-        trace_name="deep_agent_chat",
-        session_id=request.thread_id,
-        metadata={"job_id": request.job_id},
-    )
+    # langfuse v3+/v4 CallbackHandler takes no per-trace kwargs; request-specific
+    # session and metadata are propagated via the langfuse_-prefixed keys in the
+    # LangChain config metadata below, and the trace name via run_name.
+    langfuse_handler = CallbackHandler()
 
     config = {
         "configurable": {"thread_id": request.thread_id},
         "callbacks": [langfuse_handler],
+        "run_name": "deep_agent_chat",
+        "metadata": {
+            "langfuse_session_id": request.thread_id,
+            "job_id": request.job_id,
+        },
     }
     input_messages = {"messages": [{"role": "user", "content": request.message}]}
 

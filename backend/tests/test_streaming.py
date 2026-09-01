@@ -1,41 +1,10 @@
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from langchain.messages import AIMessage, AIMessageChunk
 
 from utils.streaming import stream_agent_events
-
-
-@pytest.fixture(autouse=True)
-def mock_langfuse_handler():
-    """Mock CallbackHandler to accept the old signature expected by streaming.py.
-
-    langfuse==4.5.1's CallbackHandler.__init__() no longer accepts langfuse=,
-    trace_name=, session_id=, metadata= kwargs. This fixture patches it at the
-    test module level to accept those arguments without error.
-    """
-
-    def mock_init(
-        self,
-        *,
-        langfuse=None,
-        trace_name=None,
-        session_id=None,
-        metadata=None,
-        public_key=None,
-        trace_context=None,
-    ):
-        # Accept the old signature but store minimal state.
-        # The real CallbackHandler is only instantiated for observability;
-        # tests don't assert on its behavior.
-        self.langfuse = langfuse
-        self.trace_name = trace_name
-        self.session_id = session_id
-        self.metadata = metadata
-
-    with patch("utils.streaming.CallbackHandler.__init__", mock_init):
-        yield
 
 
 def _event_types(events):
