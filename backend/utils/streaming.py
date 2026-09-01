@@ -144,22 +144,18 @@ async def stream_agent_events(agent, request) -> AsyncGenerator[dict, None]:
         errored = True
         logger.error("agent streaming error: %s", exc)
         logger.error(traceback.format_exc())
+        # Close any open message/step BEFORE the terminal event — RUN_ERROR
+        # ends the run, so nothing may follow it on the stream.
+        for e in _close_open_streams(state):
+            yield e
         yield _to_dict(RunErrorEvent(message=str(exc) or type(exc).__name__))
 
     finally:
-        # Close out any message/tool-call/step still open (defensive — the
-        # happy path closes these via the matching "updates" chunk).
-        if state.text_message_id is not None:
-            yield _to_dict(TextMessageEndEvent(message_id=state.text_message_id))
-            state.text_message_id = None
-        if state.reasoning_message_id is not None:
-            yield _to_dict(ReasoningMessageEndEvent(message_id=state.reasoning_message_id))
-            state.reasoning_message_id = None
-        if state.current_step is not None:
-            yield _to_dict(StepFinishedEvent(step_name=state.current_step))
-            state.current_step = None
-
         if not errored:
+            # Close out any message/tool-call/step still open (defensive — the
+            # happy path closes these via the matching "updates" chunk).
+            for e in _close_open_streams(state):
+                yield e
             yield _to_dict(
                 RunFinishedEvent(
                     thread_id=thread_id,
@@ -167,6 +163,21 @@ async def stream_agent_events(agent, request) -> AsyncGenerator[dict, None]:
                     outcome=RunFinishedSuccessOutcome(),
                 )
             )
+
+
+def _close_open_streams(state: _RunState) -> list[dict]:
+    """End events for any text/reasoning message or step still open."""
+    events: list[dict] = []
+    if state.text_message_id is not None:
+        events.append(_to_dict(TextMessageEndEvent(message_id=state.text_message_id)))
+        state.text_message_id = None
+    if state.reasoning_message_id is not None:
+        events.append(_to_dict(ReasoningMessageEndEvent(message_id=state.reasoning_message_id)))
+        state.reasoning_message_id = None
+    if state.current_step is not None:
+        events.append(_to_dict(StepFinishedEvent(step_name=state.current_step)))
+        state.current_step = None
+    return events
 
 
 def _handle_message_chunk(token: AIMessageChunk, state: _RunState) -> list[dict]:

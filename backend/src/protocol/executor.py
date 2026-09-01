@@ -26,6 +26,7 @@ build this (`.claude/rules/legacy-stack-freeze.md`) — this reuses
 ``main.py``'s ``/chat`` handler does today.
 """
 
+import asyncio
 import json
 import logging
 import uuid
@@ -48,6 +49,13 @@ from src.queue.redis_pubsub import subscribe
 from src.worker.tasks import run_agent_task
 
 logger = logging.getLogger("backend")
+
+# Maximum gap between consecutive pub/sub events before the run is presumed
+# dead. Unlike /chat's SSE stream, an A2A execute() has no client disconnect
+# to unblock it, so a worker that dies mid-run would otherwise leave the
+# request hanging on pubsub.listen() forever. Streaming emits token-level
+# events, so legitimate gaps are short; this bounds the worst case.
+IDLE_TIMEOUT_SECONDS = 120.0
 
 
 def _agent_message(context_id: str, task_id: str, text: str) -> Message:
@@ -130,7 +138,24 @@ class ChatAgentExecutor(AgentExecutor):
         working_announced = False
 
         try:
-            async for message in pubsub.listen():
+            listener = aiter(pubsub.listen())
+            while True:
+                try:
+                    message = await asyncio.wait_for(anext(listener), timeout=IDLE_TIMEOUT_SECONDS)
+                except StopAsyncIteration:
+                    break
+                except TimeoutError:
+                    logger.error(
+                        "A2A execute: no events for %.0fs, presuming worker dead: task_id=%s",
+                        IDLE_TIMEOUT_SECONDS,
+                        task_id,
+                    )
+                    error_text = (
+                        f"no events from the agent worker for {IDLE_TIMEOUT_SECONDS:.0f}s; "
+                        "run presumed dead"
+                    )
+                    break
+
                 if message["type"] != "message":
                     continue
 

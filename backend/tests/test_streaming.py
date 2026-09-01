@@ -134,18 +134,20 @@ async def test_stream_agent_events_error():
     async for event in stream_agent_events(agent, request):
         events.append(event)
 
+    # Open messages are closed BEFORE the terminal RUN_ERROR — nothing may
+    # follow the terminal event on the stream.
     assert _event_types(events) == [
         "RUN_STARTED",
         "TEXT_MESSAGE_START",
         "TEXT_MESSAGE_CONTENT",
-        "RUN_ERROR",
         "TEXT_MESSAGE_END",
+        "RUN_ERROR",
     ]
 
     text_content = json.loads(events[2]["data"])
     assert text_content["delta"] == "Starting"
 
-    run_error = json.loads(events[3]["data"])
+    run_error = json.loads(events[-1]["data"])
     assert "Something went wrong" in run_error["message"]
 
     # No RUN_FINISHED after a RUN_ERROR — it's a terminal outcome on its own.

@@ -211,6 +211,50 @@ class TestChatAgentExecutor:
         assert "Agent failed: ValueError" in failed_event.status.message.parts[0].text
 
     @pytest.mark.asyncio
+    async def test_execute_idle_timeout_fails_task(
+        self, mock_context, mock_event_queue, mock_pubsub
+    ):
+        """A worker that stops publishing mid-run fails the task instead of hanging."""
+        import asyncio
+
+        events_published = []
+
+        async def capture_events(event):
+            events_published.append(event)
+
+        mock_event_queue.enqueue_event.side_effect = capture_events
+
+        # One WORKING-triggering event, then silence forever (dead worker).
+        async def mock_listen():
+            yield {
+                "type": "message",
+                "data": json.dumps(
+                    {
+                        "event": "TEXT_MESSAGE_CONTENT",
+                        "data": json.dumps({"delta": "partial"}),
+                    }
+                ),
+            }
+            await asyncio.Event().wait()
+
+        mock_pubsub.listen = mock_listen
+
+        executor = ChatAgentExecutor()
+
+        with patch("src.protocol.executor.subscribe", return_value=mock_pubsub):
+            with patch("src.protocol.executor.run_agent_task") as mock_task:
+                mock_task.delay = MagicMock()
+                with patch("src.protocol.executor.IDLE_TIMEOUT_SECONDS", 0.05):
+                    await executor.execute(mock_context, mock_event_queue)
+
+        failed_event = events_published[-1]
+        assert failed_event.status.state == TaskState.TASK_STATE_FAILED
+        assert "presumed dead" in failed_event.status.message.parts[0].text
+        # The pub/sub subscription is still cleaned up on the timeout path.
+        mock_pubsub.unsubscribe.assert_awaited()
+        mock_pubsub.close.assert_awaited()
+
+    @pytest.mark.asyncio
     async def test_execute_missing_task_id(self, mock_context, mock_event_queue):
         """Test execute() with missing task_id."""
         mock_context.task_id = None
