@@ -12,8 +12,8 @@ trusting it.
 The AG-UI / A2UI / A2A rewrite landed 2026-09-01 (reviewer-verified, live
 smoke test passed). That tracker is gone; git history still has it. This
 file tracks the next batch: hydrate the chat UI from the LangGraph
-checkpointer, two logic breaks from the 2026-09-01 code review, and real
-Citus sharding.
+checkpointer, two logic breaks from the 2026-09-01 code review, real
+Citus sharding, and root README mermaid rendering.
 
 ## Status legend
 
@@ -124,6 +124,35 @@ this change runs the PK migration + `create_distributed_table` (moves
 data onto workers). A wipe (`make clean`) is the nuclear option, not
 required.
 
+## 5. Root README mermaid diagrams do not render
+
+Do **not** start this until Titus says so. Tracker only.
+
+GitHub (and similar) fail to paint the diagrams in root `README.md`.
+The architecture flowchart (the `graph LR` under Architecture) is the
+main one; the sequence diagram under "How a chat message streams" may
+be in the same boat. Frontend/backend READMEs also have mermaid blocks
+— check those when this is picked up, but the complaint is the root
+file.
+
+Likely render-breakers in the architecture graph (confirm, don't
+assume one of these is sufficient):
+
+- `%%{init: {...}}%%` directive (`useMaxWidth: false`, nested quotes)
+- emoji in a node label (`Tavily Search API 🔎`) and in `%%` comments
+- nested subgraphs (ClickHouse inside Observability; Redis/Postgres
+  inside Persistence)
+- `/` and `+` in quoted node text (`A2A Router /a2a + Agent Card`)
+
+Fix is docs-only when it happens: make the diagrams parse on GitHub.
+Do not "simplify the architecture" by deleting services from the
+picture.
+
+- [ ] Architecture `graph LR` renders on GitHub.
+- [ ] Chat-stream `sequenceDiagram` renders on GitHub.
+- [ ] Glance at `frontend/README.md` / `backend/README.md` mermaid
+      blocks for the same failure class.
+
 ## Open decisions — for Titus, NOT tasks and NOT done
 
 These stay open regardless of the `[ ]` statuses above. Do not silently
@@ -151,3 +180,5 @@ resolve any of them; each needs Titus's call.
   now registers workers and distributes `api.*` (plus checkpoint tables
   with a local fallback). Open decision removed. Live
   `citus_get_active_worker_nodes` smoke still open.
+- 2026-09-01 — Titus: root README mermaid does not render. Added as
+  task 5 (tracker only — do not fix until he says so).
