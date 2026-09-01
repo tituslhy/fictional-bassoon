@@ -1,0 +1,18 @@
+- generic [ref=e1]:
+  - alert [ref=e2]
+  - generic [ref=e40]:
+    - complementary [ref=e41]:
+      - button "New Thread" [ref=e43] [cursor=pointer]
+      - navigation [ref=e45]:
+        - generic [ref=e46]: No threads yet.Create one to get started.
+      - generic [ref=e48]:
+        - generic [ref=e54]:
+          - paragraph [ref=e55]: smoketest-20260901
+          - paragraph [ref=e56]: smoketest-20260901@example.com
+        - button "Logout" [ref=e57] [cursor=pointer]
+    - generic [ref=e66]:
+      - generic [ref=e68]:
+        - textbox "Message" [active] [ref=e69]:
+          - /placeholder: Type a message...
+        - button "Send message" [disabled] [ref=e70]
+      - paragraph [ref=e74]: AI can make mistakes. Verify important information.

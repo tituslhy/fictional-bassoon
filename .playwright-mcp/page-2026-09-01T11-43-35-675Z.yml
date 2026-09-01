@@ -1,0 +1,25 @@
+- generic [active] [ref=e1]:
+  - alert [ref=e2]
+  - generic [ref=e21]:
+    - generic [ref=e22]:
+      - heading "Create an account" [level=1] [ref=e23]
+      - paragraph [ref=e24]: Join fictional-bassoon today
+    - generic [ref=e25]:
+      - generic [ref=e26]:
+        - generic [ref=e27]:
+          - generic [ref=e28]: Full Name
+          - textbox "Full Name" [ref=e29]:
+            - /placeholder: John Doe
+        - generic [ref=e30]:
+          - generic [ref=e31]: Email address
+          - textbox "Email address" [ref=e32]:
+            - /placeholder: you@example.com
+        - generic [ref=e33]:
+          - generic [ref=e34]: Password
+          - textbox "Password" [ref=e35]:
+            - /placeholder: ••••••••
+      - button "Sign up" [ref=e37] [cursor=pointer]
+    - generic [ref=e38]:
+      - text: Already have an account?
+      - link "Sign in" [ref=e39] [cursor=pointer]:
+        - /url: /login

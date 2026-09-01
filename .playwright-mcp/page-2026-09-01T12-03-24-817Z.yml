@@ -1,0 +1,20 @@
+- generic [ref=f2e1]:
+  - alert [ref=f2e2]
+  - generic [ref=f2e3]:
+    - complementary [ref=f2e4]:
+      - button "New Thread" [ref=f2e6] [cursor=pointer]
+      - navigation [ref=f2e8]:
+        - group [ref=f2e38]:
+          - button "What is the current weather in Singapore..." [active] [ref=f2e39] [cursor=pointer]
+          - button "Delete What is the current weather in Singapore..." [ref=f2e43] [cursor=pointer]
+      - generic [ref=f2e11]:
+        - generic [ref=f2e17]:
+          - paragraph [ref=f2e18]: smoketest-20260901
+          - paragraph [ref=f2e19]: smoketest-20260901@example.com
+        - button "Logout" [ref=f2e20] [cursor=pointer]
+    - generic [ref=f2e29]:
+      - generic [ref=f2e31]:
+        - textbox "Message" [ref=f2e32]:
+          - /placeholder: Type a message...
+        - button "Send message" [disabled] [ref=f2e33]
+      - paragraph [ref=f2e37]: AI can make mistakes. Verify important information.
