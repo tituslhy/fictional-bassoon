@@ -17,6 +17,7 @@ from src.db import close_db_pool, get_db_pool
 from src.db_bootstrap import ensure_api_schema
 from src.models.auth_models import LoginRequest, SignupRequest, TokenResponse
 from src.models.chat_models import ChatRequest, HealthResponse
+from src.protocol.router import build_a2a_router
 from src.queue.redis_pubsub import redis_client, subscribe
 from src.worker.tasks import run_agent_task
 
@@ -47,6 +48,9 @@ app.add_middleware(
 
 # Instrument FastAPI with Prometheus
 Instrumentator().instrument(app).expose(app)
+
+# A2A protocol surface (Agent Card + JSON-RPC) — see src/protocol/.
+app.include_router(build_a2a_router())
 
 
 @app.post("/auth/signup", response_model=TokenResponse)
@@ -96,13 +100,18 @@ async def login(request: LoginRequest):
             return TokenResponse(access_token=token)
 
 
+_TERMINAL_EVENT_TYPES = {"RUN_FINISHED", "RUN_ERROR"}
+
+
 @app.post("/chat", response_class=EventSourceResponse)
 async def chat(request: ChatRequest):
     """Stream agent events via SSE.
 
     Enqueues a Celery task to run the agent, then subscribes to the
-    corresponding Redis pub/sub channel and yields events to the client
-    until the agent signals done.
+    corresponding Redis pub/sub channel and yields AG-UI protocol events to
+    the client until the agent's run reaches a terminal state
+    (``RUN_FINISHED`` or ``RUN_ERROR`` — see ``ag-ui-protocol``'s
+    ``EventType``, pinned per ``protocol-version-pinning.md``).
     """
     # Ensure job_id is present
     request = request.with_job_id()
@@ -142,7 +151,7 @@ async def chat(request: ChatRequest):
             # with the previous implementation (avoiding double JSON encoding).
             yield ServerSentEvent(raw_data=data_payload, event=event_type)
 
-            if event_type == "done":
+            if event_type in _TERMINAL_EVENT_TYPES:
                 break
 
     finally:

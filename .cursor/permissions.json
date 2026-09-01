@@ -1,0 +1,11 @@
+{
+  "terminalAllowlist": ["uv", "uvicorn", "celery", "python"],
+  "autoRun": {
+    "allow_instructions": [
+      "uv, uvicorn, celery, and python commands used for this project's backend are expected."
+    ],
+    "block_instructions": [
+      "Never run rm -rf."
+    ]
+  }
+}

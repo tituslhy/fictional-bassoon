@@ -1,9 +1,9 @@
-"use client";
+'use client';
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { useAuth } from "@/context/AuthContext";
-import Chat from "@/components/chat/Chat";
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/context/AuthContext';
+import Chat from '@/components/chat/Chat';
 
 export default function Home() {
   const { user, isLoading } = useAuth();
@@ -11,7 +11,7 @@ export default function Home() {
 
   useEffect(() => {
     if (!isLoading && !user) {
-      router.push("/login");
+      router.push('/login');
     }
   }, [user, isLoading, router]);
 

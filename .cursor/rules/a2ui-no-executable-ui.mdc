@@ -1,0 +1,35 @@
+---
+description: Agent output toward the frontend must be declarative A2UI JSON — never raw HTML, script, or unconstrained markdown.
+globs: backend/utils/streaming.py, frontend/src/components/chat/StreamingRenderer.tsx, frontend/src/components/chat/MarkdownSection.tsx, frontend/src/lib/a2ui/**
+alwaysApply: false
+---
+
+# A2UI: No Executable UI Across the Wire
+
+## Context
+
+Today `backend/utils/streaming.py` emits plain typed event dicts (`reasoning`,
+`answer`, `tool_call`, `tool_result`, `agent`, `error`, `done`), and the
+frontend renders them through fixed components — `StreamingRenderer.tsx` for
+the event types, `MarkdownSection.tsx` (via `react-markdown` + `remark-gfm`)
+for freeform agent text. That second piece matters: the frontend already
+trusts agent-produced text enough to run it through a markdown renderer. A2UI
+exists specifically to formalize and constrain that trust boundary — the
+agent describes a component tree, the host renders it from a fixed, known
+component set, and nothing the agent emits is ever interpreted as markup or
+script.
+
+## Hard rules
+
+- Anything the agent sends toward rendering must be declarative A2UI
+  component-tree JSON, validated against the A2UI schema before it reaches
+  the frontend.
+- The agent never emits raw HTML, embedded `<script>`, or
+  markdown-with-executable-content that gets rendered without first going
+  through the A2UI component contract.
+- `MarkdownSection.tsx` either gets folded into the A2UI-rendered component
+  set (as one allow-listed "markdown block" component type with sanitized
+  rendering) or is retired — it does not survive as an unconstrained side
+  channel that agent text can still reach.
+- New A2UI component types get added deliberately, one at a time, to an
+  explicit allow-list. No "just render whatever comes through" fallback.

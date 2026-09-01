@@ -16,11 +16,11 @@ export interface ToolCall {
 
 export interface ThreadMessage {
   id: string;
-  role: "user" | "assistant";
+  role: 'user' | 'assistant';
   content: string;
   reasoning?: string;
   toolCalls: ToolCall[];
-  status: "streaming" | "done" | "error";
+  status: 'streaming' | 'done' | 'error';
   error?: string;
 }
 
@@ -31,14 +31,33 @@ export interface Thread {
   updatedAt: number;
 }
 
-export type SSEEventType =
-  | "agent"
-  | "reasoning"
-  | "answer"
-  | "tool_call"
-  | "tool_result"
-  | "error"
-  | "done";
+// AG-UI protocol event types (ag-ui-protocol==0.1.21 EventType enum — see
+// .claude/rules/protocol-version-pinning.md). This is the vocabulary the
+// backend emits on /chat's SSE stream (backend/utils/streaming.py) and the
+// only vocabulary the frontend consumes — the legacy pre-AG-UI vocabulary
+// (reasoning/tool_call/tool_result/answer/agent/error/done) has been fully
+// retired from the frontend.
+export type AGUIEventType =
+  | 'RUN_STARTED'
+  | 'RUN_FINISHED'
+  | 'RUN_ERROR'
+  | 'STEP_STARTED'
+  | 'STEP_FINISHED'
+  | 'TEXT_MESSAGE_START'
+  | 'TEXT_MESSAGE_CONTENT'
+  | 'TEXT_MESSAGE_END'
+  | 'TEXT_MESSAGE_CHUNK'
+  | 'REASONING_MESSAGE_START'
+  | 'REASONING_MESSAGE_CONTENT'
+  | 'REASONING_MESSAGE_END'
+  | 'REASONING_MESSAGE_CHUNK'
+  | 'TOOL_CALL_START'
+  | 'TOOL_CALL_ARGS'
+  | 'TOOL_CALL_END'
+  | 'TOOL_CALL_CHUNK'
+  | 'TOOL_CALL_RESULT';
+
+export type SSEEventType = AGUIEventType;
 
 export interface SSEEvent {
   event: SSEEventType;

@@ -1,8 +1,16 @@
-"use client";
+'use client';
 
-import React, { createContext, useContext, useState, useCallback, useEffect, useRef, ReactNode } from "react";
-import { useAuth } from "./AuthContext";
-import type { Thread, ThreadMessage } from "@/types";
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  useEffect,
+  useRef,
+  ReactNode,
+} from 'react';
+import { useAuth } from './AuthContext';
+import type { Thread, ThreadMessage } from '@/types';
 
 interface ThreadContextType {
   threads: Thread[];
@@ -17,7 +25,7 @@ interface ThreadContextType {
 
 const ThreadContext = createContext<ThreadContextType | undefined>(undefined);
 
-const DB_BASE = process.env.NEXT_PUBLIC_DB_URL || "http://localhost:3002";
+const DB_BASE = process.env.NEXT_PUBLIC_DB_URL || 'http://localhost:3002';
 
 export function ThreadProvider({ children }: { children: ReactNode }) {
   const [threads, setThreadsState] = useState<Thread[]>([]);
@@ -47,7 +55,10 @@ export function ThreadProvider({ children }: { children: ReactNode }) {
             title: t.title,
             updatedAt: new Date(t.updated_at).getTime(),
             messages: (t.messages || [])
-              .sort((a: any, b: any) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime())
+              .sort(
+                (a: any, b: any) =>
+                  new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()
+              )
               .map((m: any) => ({
                 id: m.id,
                 role: m.role,
@@ -59,10 +70,10 @@ export function ThreadProvider({ children }: { children: ReactNode }) {
               })),
           }));
           setThreadsState(formatted);
-          setActiveThreadIdState((current) => current ?? formatted[0]?.id ?? null);
+          setActiveThreadIdState(current => current ?? formatted[0]?.id ?? null);
         }
       } catch (err) {
-        console.error("Failed to fetch threads from DB:", err);
+        console.error('Failed to fetch threads from DB:', err);
       } finally {
         setIsLoaded(true);
       }
@@ -75,45 +86,50 @@ export function ThreadProvider({ children }: { children: ReactNode }) {
     (id: string | null) => {
       setActiveThreadIdState(id);
     },
-    [setActiveThreadIdState],
+    [setActiveThreadIdState]
   );
 
   const createThread = useCallback(async () => {
     const tempId = crypto.randomUUID();
-    
+
     // Add to local state immediately for UI responsiveness
-    const newThread: Thread = { id: tempId, title: "New Thread", messages: [], updatedAt: Date.now() };
-    setThreadsState((prev) => [newThread, ...prev]);
+    const newThread: Thread = {
+      id: tempId,
+      title: 'New Thread',
+      messages: [],
+      updatedAt: Date.now(),
+    };
+    setThreadsState(prev => [newThread, ...prev]);
     setActiveThreadId(tempId);
 
     if (token) {
       try {
         const res = await fetch(`${DB_BASE}/threads`, {
-          method: "POST",
+          method: 'POST',
           headers: {
             Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-            Prefer: "return=representation",
+            'Content-Type': 'application/json',
+            Prefer: 'return=representation',
           },
           body: JSON.stringify({
             id: tempId,
             user_id: user?.id,
-            title: "New Thread",
+            title: 'New Thread',
           }),
         });
-        if (!res.ok) throw new Error("Failed to persist thread");
+        if (!res.ok) throw new Error('Failed to persist thread');
       } catch (err) {
-        console.error("Error persisting thread:", err);
+        console.error('Error persisting thread:', err);
       }
     }
-    
+
     return tempId;
   }, [token, user, setActiveThreadId]);
 
   const deleteThread = useCallback(
     async (id: string) => {
-      setThreadsState((prev) => {
-        const next = prev.filter((t) => t.id !== id);
+      setThreadsState(prev => {
+        const next = prev.filter(t => t.id !== id);
         if (activeThreadId === id && next.length > 0) {
           setActiveThreadId(next[0].id);
         } else if (activeThreadId === id) {
@@ -125,32 +141,32 @@ export function ThreadProvider({ children }: { children: ReactNode }) {
       if (token) {
         try {
           await fetch(`${DB_BASE}/threads?id=eq.${id}`, {
-            method: "DELETE",
+            method: 'DELETE',
             headers: { Authorization: `Bearer ${token}` },
           });
         } catch (err) {
-          console.error("Error deleting thread:", err);
+          console.error('Error deleting thread:', err);
         }
       }
     },
-    [activeThreadId, token, setActiveThreadId],
+    [activeThreadId, token, setActiveThreadId]
   );
 
   const addMessage = useCallback(
     async (threadId: string, msg: ThreadMessage) => {
-      setThreadsState((prev) =>
-        prev.map((t) =>
-          t.id === threadId ? { ...t, messages: [...t.messages, msg], updatedAt: Date.now() } : t,
-        ),
+      setThreadsState(prev =>
+        prev.map(t =>
+          t.id === threadId ? { ...t, messages: [...t.messages, msg], updatedAt: Date.now() } : t
+        )
       );
 
       if (token) {
         try {
           await fetch(`${DB_BASE}/messages`, {
-            method: "POST",
+            method: 'POST',
             headers: {
               Authorization: `Bearer ${token}`,
-              "Content-Type": "application/json",
+              'Content-Type': 'application/json',
             },
             body: JSON.stringify({
               id: msg.id,
@@ -164,72 +180,73 @@ export function ThreadProvider({ children }: { children: ReactNode }) {
             }),
           });
         } catch (err) {
-          console.error("Error persisting message:", err);
+          console.error('Error persisting message:', err);
         }
       }
     },
-    [token],
+    [token]
   );
 
   const updateThreadTitle = useCallback(
     async (threadId: string, title: string) => {
-      setThreadsState((prev) =>
-        prev.map((t) => (t.id === threadId ? { ...t, title } : t)),
-      );
+      setThreadsState(prev => prev.map(t => (t.id === threadId ? { ...t, title } : t)));
 
       if (token) {
         try {
           await fetch(`${DB_BASE}/threads?id=eq.${threadId}`, {
-            method: "PATCH",
+            method: 'PATCH',
             headers: {
               Authorization: `Bearer ${token}`,
-              "Content-Type": "application/json",
+              'Content-Type': 'application/json',
             },
             body: JSON.stringify({ title }),
           });
         } catch (err) {
-          console.error("Error updating thread title:", err);
+          console.error('Error updating thread title:', err);
         }
       }
     },
-    [token],
+    [token]
   );
 
   const updateThreadMessages = useCallback(
     (threadId: string, messages: ThreadMessage[]) => {
-      setThreadsState((prev) =>
-        prev.map((t) => (t.id === threadId ? { ...t, messages, updatedAt: Date.now() } : t)),
+      setThreadsState(prev =>
+        prev.map(t => (t.id === threadId ? { ...t, messages, updatedAt: Date.now() } : t))
       );
-      
+
       // Note: We don't persist full message list updates for streaming here
       // Individual message persistence is handled by addMessage or targeted updates
       // In a real production app, we might want to debounced-sync the final state
       if (token) {
         const lastMsg = messages[messages.length - 1];
-        if (lastMsg && lastMsg.status === "done") {
-             // Upsert the finalized message
-             fetch(`${DB_BASE}/messages`, {
-                method: "POST",
-                headers: {
-                  Authorization: `Bearer ${token}`,
-                  "Content-Type": "application/json",
-                  "Prefer": "resolution=merge-duplicates"
-                },
-                body: JSON.stringify({
-                  id: lastMsg.id,
-                  thread_id: threadId,
-                  role: lastMsg.role,
-                  content: lastMsg.content,
-                  reasoning: lastMsg.reasoning,
-                  tool_calls: lastMsg.toolCalls,
-                  status: lastMsg.status,
-                  error: lastMsg.error,
-                }),
-              }).catch(e => console.error("Error upserting message:", e));
+        // Persist any terminal message — errored runs included, so a failed
+        // reply survives reload instead of silently vanishing (the DB's
+        // status CHECK already allows 'error').
+        if (lastMsg && (lastMsg.status === 'done' || lastMsg.status === 'error')) {
+          // Upsert the finalized message
+          fetch(`${DB_BASE}/messages`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+              Prefer: 'resolution=merge-duplicates',
+            },
+            body: JSON.stringify({
+              id: lastMsg.id,
+              thread_id: threadId,
+              role: lastMsg.role,
+              content: lastMsg.content,
+              reasoning: lastMsg.reasoning,
+              tool_calls: lastMsg.toolCalls,
+              status: lastMsg.status,
+              error: lastMsg.error,
+            }),
+          }).catch(e => console.error('Error upserting message:', e));
         }
       }
     },
-    [token],
+    [token]
   );
 
   const sortedThreads = [...threads].sort((a, b) => b.updatedAt - a.updatedAt);
@@ -259,7 +276,7 @@ export function ThreadProvider({ children }: { children: ReactNode }) {
 
 export function useThreadsContext() {
   const ctx = useContext(ThreadContext);
-  if (!ctx) throw new Error("useThreadsContext must be inside ThreadProvider");
+  if (!ctx) throw new Error('useThreadsContext must be inside ThreadProvider');
   return ctx;
 }
 

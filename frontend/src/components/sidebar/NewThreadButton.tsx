@@ -1,6 +1,6 @@
-"use client";
+'use client';
 
-import { Plus } from "lucide-react";
+import { Plus } from 'lucide-react';
 
 interface NewThreadButtonProps {
   onClick: () => void;

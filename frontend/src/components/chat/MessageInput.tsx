@@ -1,7 +1,7 @@
-"use client";
+'use client';
 
-import { useState, useRef, useEffect } from "react";
-import { Send } from "lucide-react";
+import { useState, useRef, useEffect } from 'react';
+import { Send } from 'lucide-react';
 
 interface MessageInputProps {
   onSend: (text: string) => void;
@@ -10,7 +10,7 @@ interface MessageInputProps {
 }
 
 export default function MessageInput({ onSend, isStreaming, isEmpty }: MessageInputProps) {
-  const [text, setText] = useState("");
+  const [text, setText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -24,14 +24,14 @@ export default function MessageInput({ onSend, isStreaming, isEmpty }: MessageIn
     const trimmed = text.trim();
     if (!trimmed || isStreaming) return;
     onSend(trimmed);
-    setText("");
+    setText('');
     textareaRef.current?.focus();
   };
 
   useEffect(() => {
     if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
-      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 200) + "px";
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 200) + 'px';
     }
   }, [text]);
 
@@ -43,9 +43,9 @@ export default function MessageInput({ onSend, isStreaming, isEmpty }: MessageIn
             <textarea
               ref={textareaRef}
               value={text}
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey && !isStreaming) {
+              onChange={e => setText(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && !e.shiftKey && !isStreaming) {
                   e.preventDefault();
                   handleSubmit(e);
                 }

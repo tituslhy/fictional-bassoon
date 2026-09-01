@@ -4,7 +4,15 @@ High-performance, full-stack AI chat application designed to stream real-time ag
 
 ## Overview
 
-This project is a showcase of distributed systems engineering applied to AI agents. It streams real-time agent reasoning, tool calls, tool results, and final answers to the browser via **Server-Sent Events (SSE)**. The architecture offloads heavy "Deep Agent" workloads to asynchronous workers, utilizes a sharded database cluster for infinite state persistence, and provides complete observability and LLM tracing across the entire stack.
+This project is a showcase of distributed systems engineering applied to AI agents. It streams real-time agent reasoning, tool calls, tool results, and final answers to the browser via **Server-Sent Events (SSE)**, speaking the **[AG-UI protocol](https://docs.ag-ui.com/)** event vocabulary end-to-end. The architecture offloads heavy "Deep Agent" workloads to asynchronous workers, persists conversation state in a PostgreSQL/Citus cluster, and provides complete observability and LLM tracing across the entire stack.
+
+The app is built on three open agent protocols (all version-pinned — see `.claude/rules/protocol-version-pinning.md`):
+
+| Protocol | Role here | Where |
+|---|---|---|
+| **AG-UI** (`ag-ui-protocol==0.1.21`) | Agent → frontend event stream over SSE: `RUN_*`, `STEP_*`, `TEXT_MESSAGE_*`, `REASONING_MESSAGE_*`, `TOOL_CALL_*` | `backend/utils/streaming.py` → `frontend/src/hooks/useSSEStream.ts` |
+| **A2UI** (spec v1.0, scoped subset) | Declarative frontend rendering via a validated component allow-list (`column` / `reasoning` / `tool_call` / `markdown`) — no data binding, no executable UI | `frontend/src/lib/a2ui/` |
+| **A2A** (`a2a-sdk[fastapi]==1.1.2`) | Exposes the backend as a callable service for other agents: Agent Card + JSON-RPC, with `taskId` == `job_id` and `contextId` == `thread_id` (one ID system, not three) | `backend/src/protocol/` — `GET /.well-known/agent-card.json`, `POST /a2a` |
 
 ## Architecture
 
@@ -34,8 +42,13 @@ graph LR
     subgraph Backend [FastAPI & Workers]
         API[FastAPI /chat]
         AuthAPI[FastAPI /auth]
+        A2A["A2A Router /a2a + Agent Card"]
         Worker[Celery Worker]
         Agent[LangGraph Deep Agent]
+    end
+
+    subgraph Peers [External Agents]
+        A2AClient[A2A Client Agent]
     end
 
     %% 🔥 External Tool Layer (new)
@@ -96,6 +109,9 @@ graph LR
     NG -->|/api/db| PGRST
     API -->|Subscribe| PubSub
     API -->|Enqueue Task| Broker
+    A2AClient -->|JSON-RPC SendMessage| A2A
+    A2A -->|Enqueue Task| Broker
+    A2A -->|Subscribe| PubSub
     Broker -->|Execute| Worker
     Worker -->|Run| Agent
 
@@ -108,8 +124,8 @@ graph LR
     PgB --> CitusC
     CitusC --> CW1
     CitusC --> CW2
-    Agent -->|Publish Events| PubSub
-    PubSub -->|SSE Stream| API
+    Agent -->|Publish AG-UI Events| PubSub
+    PubSub -->|AG-UI over SSE| API
     Agent -->|Trace| Langfuse
     Langfuse --> Minio
     Langfuse --> CH01
@@ -138,7 +154,8 @@ graph LR
     %% NODE COLORS
     class UI,NG browser
     class SSE,Auth frontend
-    class API,AuthAPI,Worker,Agent backend
+    class API,AuthAPI,A2A,Worker,Agent backend
+    class A2AClient external
     class PgB,PGRST,CitusC,CW1,CW2 postgres
     class RedisPrimary,RedisR1,RedisR2,Sentinel1,Sentinel2,Sentinel3,PubSub redis
     class Langfuse,Minio,LangfuseRedis observability
@@ -148,6 +165,7 @@ graph LR
 
     %% ZONE COLORS
     style Client fill:#f3f4f6,stroke:#888
+    style Peers fill:#f8fafc,stroke:#64748b
     style Proxy fill:#f3f4f6,stroke:#888
     style Frontend fill:#f5f3ff,stroke:#7c3aed
     style Backend fill:#ecfdf5,stroke:#059669
@@ -158,7 +176,40 @@ graph LR
     style Monitoring fill:#f5f3ff,stroke:#7c3aed
 ```
 
+## How a chat message streams
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant B as Browser (Next.js)
+    participant F as FastAPI /chat
+    participant Q as RabbitMQ
+    participant W as Celery Worker
+    participant A as LangGraph Agent
+    participant R as Redis Pub/Sub
+
+    B->>F: POST /chat {message, thread_id}
+    F->>R: SUBSCRIBE stream:{job_id}
+    F->>Q: enqueue run_agent_task
+    F-->>B: SSE stream opens
+    Q->>W: deliver task
+    W->>A: astream(messages, updates)
+    A->>R: RUN_STARTED
+    A->>R: STEP_STARTED / REASONING_MESSAGE_* (thinking tokens)
+    A->>R: TOOL_CALL_START / ARGS / END / RESULT (e.g. tavily_search)
+    A->>R: TEXT_MESSAGE_START / CONTENT / END (answer tokens)
+    A->>R: RUN_FINISHED (or RUN_ERROR — terminal on its own)
+    R-->>F: each event, in order
+    F-->>B: re-emitted as SSE frames
+    Note over B: useSSEStream.ts parses events;<br/>Chat.tsx renders reasoning, tool calls,<br/>and the streamed answer live
+```
+
+The same pipeline is reachable by other agents over **A2A**: a JSON-RPC `SendMessage` to `POST /a2a` enqueues the identical Celery task and maps the AG-UI terminal events onto A2A task states (`submitted → working → completed/failed`), with a 120s idle timeout guarding against dead workers.
+
 ## Key Design Decisions
+
+- **Protocol-driven surfaces (AG-UI · A2UI · A2A)**
+  The agent↔frontend stream, the rendering contract, and the service-to-service interface each follow an open protocol instead of a hand-rolled vocabulary. Versions are pinned and verified against the installed packages (`.claude/rules/protocol-version-pinning.md`); the A2UI implementation is a deliberately scoped, non-executable subset (`column`/`reasoning`/`tool_call`/`markdown` only).
 
 - **SSE over WebSockets**
   Simpler, more reliable streaming model for server → client updates. Leverages standard HTTP and provides automatic keep-alive support via FastAPI's `EventSourceResponse`.
@@ -175,8 +226,8 @@ graph LR
 - **Dual PgBouncer Pools (Transaction + Session)**
   Optimizes database connectivity by separating short-lived API queries from long-lived agent state connections.
 
-- **Citus for Horizontal Scaling**
-  Shards LangGraph agent state by `thread_id` across a multi-node cluster, ensuring the system can handle millions of concurrent conversations.
+- **Citus-ready Data Layer**
+  Runs a coordinator + 2-worker Citus cluster with all tables keyed by `thread_id` as the intended shard key — but distribution is **not yet enabled** (no `create_distributed_table` calls; the LangGraph checkpoint tables are deliberately local due to a documented Citus/LangGraph `jsonb_each_text` incompatibility — see `.claude/rules/citus-thread-id-integrity.md`).
 
 - **Langfuse Observability & Clickhouse**
   Provides deep tracing of agent trajectories, token usage analysis, and detailed execution logs for production debugging. Langfuse utilizes Redis/Valkey for asynchronous event queuing (via BullMQ), API key validation, and prompt caching.
@@ -203,14 +254,20 @@ fictional-bassoon/
 
 ## Quick Start (Unified Stack)
 
-The easiest way to run the entire application is using the master Docker Compose:
+The easiest way to run the entire application is through the Makefile (which drives the master Docker Compose in `docker/`):
 
 ```bash
-cd docker
-docker compose up -d
+make up          # start all services (detached)
+make up-build    # rebuild images, then start
+make logs        # follow logs
+make down        # stop and remove containers
+make clean       # remove volumes and images too
 ```
 
-This will start the unified gateway on [http://localhost](http://localhost).
+You'll need `backend/.env` populated first (see the table in `backend/README.md` — at minimum `OPENAI_API_KEY` and `TAVILY_API_KEY`). Once up:
+
+- Chat UI: [http://localhost:3000](http://localhost:3000) (or via nginx at [http://localhost](http://localhost))
+- A2A Agent Card: [http://localhost:8000/.well-known/agent-card.json](http://localhost:8000/.well-known/agent-card.json)
 
 ## Local Development
 
@@ -259,6 +316,18 @@ uvicorn main:app --reload
 cd frontend
 npm install
 npm run dev
+```
+
+## Testing
+
+Both stacks hold a ≥90% coverage gate (statements/lines):
+
+```bash
+# Backend — 95% coverage
+cd backend && uv run pytest -q --cov=.
+
+# Frontend — 93.97% statements / 95.35% lines
+cd frontend && npm run test:coverage
 ```
 
 ## Monitoring & Observability

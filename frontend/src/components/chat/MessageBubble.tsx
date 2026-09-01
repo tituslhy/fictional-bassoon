@@ -1,7 +1,7 @@
-"use client";
+'use client';
 
-import StreamingRenderer from "./StreamingRenderer";
-import type { ThreadMessage } from "@/types";
+import StreamingRenderer from './StreamingRenderer';
+import type { ThreadMessage } from '@/types';
 
 interface MessageBubbleProps {
   message: ThreadMessage;
@@ -9,7 +9,7 @@ interface MessageBubbleProps {
 }
 
 export default function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
-  const isUser = message.role === "user";
+  const isUser = message.role === 'user';
 
   if (isUser) {
     return (
@@ -21,7 +21,7 @@ export default function MessageBubble({ message, isStreaming }: MessageBubblePro
     );
   }
 
-  if (message.status === "error" && message.error) {
+  if (message.status === 'error' && message.error) {
     return (
       <div className="flex justify-start gap-3">
         <div className="flex-1 max-w-[85%] space-y-1">
