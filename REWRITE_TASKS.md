@@ -173,20 +173,18 @@ Suggestions — see "Open decisions" below and the Log for what remains open.
 These stay open regardless of the `[x]` statuses above. Do not silently
 resolve any of them; each needs Titus's call.
 
-- Frontend `status: 'done'`-on-error bug — live-confirmed on 2026-09-01:
-  errors render nothing in the UI. `Chat.tsx` finalizes errored messages
-  with `status: 'done'` while `MessageBubble.tsx`'s `status === 'error'`
-  branch is never triggered (nothing ever sets it) and `ThreadContext.tsx`
-  only persists `status === 'done'` messages. Pre-existing
-  behavior/persistence-semantics question, deliberately not changed during
-  the vocabulary swap.
+- ~~Frontend `status: 'done'`-on-error bug~~ — RESOLVED 2026-09-01 at
+  Titus's request (commit `9d04a82`): both error paths now set
+  `status: 'error'`, `MessageBubble.tsx`'s error branch renders, and
+  `ThreadContext.tsx` persists terminal messages whether `'done'` or
+  `'error'`.
 - A2A `cancel()` unsupported (raises `UnsupportedOperationError`) and
   `InMemoryTaskStore` is process-local (lost on restart, not shared across
   replicas). Fixing either crosses the `legacy-stack-freeze.md` scope
   boundary — needs an explicit decision.
-- Stale legacy-vocabulary docs: `.claude/rules/streaming-patterns.md`'s
-  emitted-event list and root `CLAUDE.md`'s "SSE event types" section still
-  document the pre-AG-UI vocabulary.
+- ~~Stale legacy-vocabulary docs~~ — RESOLVED 2026-09-01 at Titus's
+  request (commit `17c772d`): `.claude/rules/streaming-patterns.md` and
+  root `CLAUDE.md` now document the AG-UI vocabulary.
 - Optional adoption of the official `@a2ui/web_core` / `@a2ui/react`
   packages (deliberately not installed — see
   `protocol-version-pinning.md` for the reasons recorded at the time).
@@ -212,3 +210,4 @@ resolve any of them; each needs Titus's call.
 - 2026-09-01 (main session) — backend fix landed: langfuse `CallbackHandler` migrated to the v4 no-kwarg API, with session info passed via LangChain config metadata instead (commit `3e23e33`) — the previous wiring made every live run fail before the agent started. Frontend coverage push committed as `3f78ca8` (187 tests, 93.97% statements / 95.35% lines, tsc + eslint clean).
 - 2026-09-01 (main session) — live end-to-end smoke test PASSED: full stack via `make up`; signup → thread → chat message → Celery → LangGraph agent → Tavily tool call → AG-UI events streamed over SSE → rendered tool-call block and markdown answer in the UI; A2A agent card serving at `/.well-known/agent-card.json`. Screenshots in `handoffs/screenshots/` (gitignored). One environment incident during testing: Docker Desktop was externally terminated twice, corrupting a running container's overlay filesystem (bogus ImportError); resolved by recreating containers — not an application bug. Live testing also confirmed the `status: 'done'`-on-error frontend bug (errors render nothing in the UI) — recorded under "Open decisions", not fixed.
 - 2026-09-01 (planner, recording `protocol-reviewer` final-gate verdict relayed by the main session) — flipped `[~]` → `[x]` on all four backend AG-UI items, all four frontend A2UI items (plus the resolved integration task note), all three A2A items, and the frontend coverage gate (93.97%/95.35% independently re-run by the reviewer); review-gate section's four items marked `[x]` (rule compliance vs all ten rule files, coverage re-run, test quality spot-check, code-quality pass — findings: 0 Critical, 2 Warnings, 5 Suggestions). Planner spot-checked repo state before flipping: no-kwarg `CallbackHandler()` present in `backend/utils/streaming.py`, `build_a2a_router()` mounted in `backend/main.py`, `test:coverage` script present in `frontend/package.json`. Added an "Open decisions — for Titus" section carrying the four unresolved items (error-status bug, A2A cancel()/InMemoryTaskStore limits, stale legacy-vocabulary docs, optional official @a2ui packages) so the all-`[x]` checklists don't read as "nothing left".
+- 2026-09-01 (main session, at Titus's request) — post-review fixes landed: A2A executor idle timeout so a dead worker fails the task instead of hanging `execute()` forever, and stream-close events now precede the terminal `RUN_ERROR` (commit `5a6be72`, reviewer Warning 1 + Suggestion 1); repo-wide backend ruff cleanup, 72 pre-existing findings fixed (`cf04f9d`, Warning 2); frontend error-status fix per the entry above plus typed `Thread`/`ThreadMessage` casts in `Chat.tsx` and removal of tracked `setup.ts.bak` (`9d04a82`, Suggestions 2/3 + the error-status open decision); legacy-vocabulary docs retired (`17c772d`). Verified after all fixes: backend 52/52 tests, ruff clean; frontend 188 tests, 93.97%/95.35% coverage held, tsc + eslint clean. Still open: A2A cancel()/InMemoryTaskStore limits, optional official @a2ui packages.
