@@ -1,3 +1,5 @@
+import type { A2UIComponentNode } from '@/lib/a2ui/schema';
+
 export interface ChatRequest {
   message: string;
   thread_id: string;
@@ -22,6 +24,8 @@ export interface ThreadMessage {
   toolCalls: ToolCall[];
   status: 'streaming' | 'done' | 'error';
   error?: string;
+  /** Wire A2UI tree from AG-UI CUSTOM name=a2ui. Absent on history hydrate. */
+  a2ui?: A2UIComponentNode;
 }
 
 export interface Thread {
@@ -55,7 +59,8 @@ export type AGUIEventType =
   | 'TOOL_CALL_ARGS'
   | 'TOOL_CALL_END'
   | 'TOOL_CALL_CHUNK'
-  | 'TOOL_CALL_RESULT';
+  | 'TOOL_CALL_RESULT'
+  | 'CUSTOM';
 
 export type SSEEventType = AGUIEventType;
 

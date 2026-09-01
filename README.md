@@ -17,7 +17,6 @@ The app is built on three open agent protocols (all version-pinned — see `.cla
 ## Architecture
 
 ```mermaid
-%%{init: {'flowchart': {'useMaxWidth': false, 'curve': 'basis', 'rankSpacing': 120, 'nodeSpacing': 50}}}%%
 graph LR
     classDef browser fill:#e8e8e8,stroke:#888,color:#222
     classDef frontend fill:#ede9fe,stroke:#7c3aed,color:#3b0764
@@ -39,10 +38,10 @@ graph LR
         SSE[useSSEStream Hook]
         Auth[Auth Logic]
     end
-    subgraph Backend [FastAPI & Workers]
-        API[FastAPI /chat]
-        AuthAPI[FastAPI /auth]
-        A2A["A2A Router /a2a + Agent Card"]
+    subgraph Backend [FastAPI and Workers]
+        API[FastAPI chat]
+        AuthAPI[FastAPI auth]
+        A2A[A2A Router and Agent Card]
         Worker[Celery Worker]
         Agent[LangGraph Deep Agent]
     end
@@ -51,43 +50,45 @@ graph LR
         A2AClient[A2A Client Agent]
     end
 
-    %% 🔥 External Tool Layer (new)
     subgraph Tools [External Tools]
-        Tavily[Tavily Search API 🔎]
+        Tavily[Tavily Search API]
     end
 
     subgraph Observability [Langfuse Suite]
-        Langfuse[Langfuse Web/Worker]
+        Langfuse[Langfuse Web Worker]
         Minio[Minio Object Store]
-        LangfuseRedis[Langfuse Redis Cache/Queue]
-        subgraph ClickhouseCluster [ClickHouse Cluster]
-            CH01[CH-01 Node]
-            CH02[CH-02 Node]
-            CH03[CH-03 Node]
-            CKP1[Keeper 01]
-            CKP2[Keeper 02]
-            CKP3[Keeper 03]
-        end
+        LangfuseRedis[Langfuse Redis Cache]
     end
 
-    subgraph Persistence [Distributed Data Layer]
+    subgraph ClickhouseCluster [ClickHouse Cluster]
+        CH01[CH-01 Node]
+        CH02[CH-02 Node]
+        CH03[CH-03 Node]
+        CKP1[Keeper 01]
+        CKP2[Keeper 02]
+        CKP3[Keeper 03]
+    end
+
+    subgraph BrokerBox [Message Broker]
         Broker[RabbitMQ Broker]
-        subgraph RedisCluster [Redis Sentinel Cluster]
-            RedisPrimary[App Redis Primary]
-            RedisR1[Replica 1]
-            RedisR2[Replica 2]
-            Sentinel1[Sentinel 1]
-            Sentinel2[Sentinel 2]
-            Sentinel3[Sentinel 3]
-        end
-        PubSub[Redis Pub/Sub]
-        subgraph PostgresCluster [Postgres Cluster]
-            PgB[PgBouncer Pool]
-            PGRST[PostgREST /api/db]
-            CitusC[Citus Coordinator]
-            CW1[Citus Worker 1]
-            CW2[Citus Worker 2]
-        end
+    end
+
+    subgraph RedisCluster [Redis Sentinel Cluster]
+        RedisPrimary[App Redis Primary]
+        RedisR1[Replica 1]
+        RedisR2[Replica 2]
+        Sentinel1[Sentinel 1]
+        Sentinel2[Sentinel 2]
+        Sentinel3[Sentinel 3]
+        PubSub[Redis Pub-Sub]
+    end
+
+    subgraph PostgresCluster [Postgres Cluster]
+        PgB[PgBouncer Pool]
+        PGRST[PostgREST]
+        CitusC[Citus Coordinator]
+        CW1[Citus Worker 1]
+        CW2[Citus Worker 2]
     end
 
     subgraph Monitoring [LGTM Stack]
@@ -98,35 +99,28 @@ graph LR
         Grafana[Grafana Dashboards]
     end
 
-    %% 🔧 VERTICAL SPINE
-    UI --> NG --> SSE --> API --> Worker --> Agent --> PgB
-
-    %% FLOW
-    UI -->|port 80| NG
+    UI --> NG
     NG --> SSE
-    NG -->|/api/auth| AuthAPI
-    NG -->|/api/chat| API
-    NG -->|/api/db| PGRST
-    API -->|Subscribe| PubSub
-    API -->|Enqueue Task| Broker
-    A2AClient -->|JSON-RPC SendMessage| A2A
-    A2A -->|Enqueue Task| Broker
-    A2A -->|Subscribe| PubSub
-    Broker -->|Execute| Worker
-    Worker -->|Run| Agent
-
-    %% 🔥 Tavily tool usage (new)
-    Agent -.->|Tool Call| Tavily
-
-    Agent -->|Checkpoint| PgB
-    PGRST -->|CRUD| PgB
-    AuthAPI -->|Users| PgB
+    NG --> AuthAPI
+    NG --> API
+    NG --> PGRST
+    API --> PubSub
+    API --> Broker
+    A2AClient --> A2A
+    A2A --> Broker
+    A2A --> PubSub
+    Broker --> Worker
+    Worker --> Agent
+    Agent -.-> Tavily
+    Agent --> PgB
+    PGRST --> PgB
+    AuthAPI --> PgB
     PgB --> CitusC
     CitusC --> CW1
     CitusC --> CW2
-    Agent -->|Publish AG-UI Events| PubSub
-    PubSub -->|AG-UI over SSE| API
-    Agent -->|Trace| Langfuse
+    Agent --> PubSub
+    PubSub --> API
+    Agent --> Langfuse
     Langfuse --> Minio
     Langfuse --> CH01
     CH01 --- CH02
@@ -134,43 +128,38 @@ graph LR
     CKP1 --- CKP2
     CKP2 --- CKP3
     Langfuse --> LangfuseRedis
-
-    %% Shared infra hint
-    LangfuseRedis -.->|Shared Redis Infra| RedisPrimary
-
+    LangfuseRedis -.-> RedisPrimary
     RedisPrimary --> RedisR1
     RedisPrimary --> RedisR2
     Sentinel1 --- Sentinel2
     Sentinel2 --- Sentinel3
-
-    Worker -.->|Metrics| Prom
-    API -.->|Metrics| Prom
-    Alloy -.->|Logs| Loki
+    Worker -.-> Prom
+    API -.-> Prom
+    Alloy -.-> Loki
     Prom --> Grafana
     Loki --> Grafana
     Tempo --> Grafana
 
-
-    %% NODE COLORS
     class UI,NG browser
     class SSE,Auth frontend
     class API,AuthAPI,A2A,Worker,Agent backend
-    class A2AClient external
+    class A2AClient,Tavily external
     class PgB,PGRST,CitusC,CW1,CW2 postgres
     class RedisPrimary,RedisR1,RedisR2,Sentinel1,Sentinel2,Sentinel3,PubSub redis
     class Langfuse,Minio,LangfuseRedis observability
     class CH01,CH02,CH03,CKP1,CKP2,CKP3 clickhouse
     class Alloy,Loki,Prom,Tempo,Grafana monitoring
-    class Tavily external
+    class Broker backend
 
-    %% ZONE COLORS
     style Client fill:#f3f4f6,stroke:#888
     style Peers fill:#f8fafc,stroke:#64748b
     style Proxy fill:#f3f4f6,stroke:#888
     style Frontend fill:#f5f3ff,stroke:#7c3aed
     style Backend fill:#ecfdf5,stroke:#059669
     style Tools fill:#f8fafc,stroke:#64748b
-    style Persistence fill:#eff6ff,stroke:#2563eb
+    style BrokerBox fill:#ecfdf5,stroke:#059669
+    style RedisCluster fill:#f0fdf4,stroke:#16a34a
+    style PostgresCluster fill:#eff6ff,stroke:#2563eb
     style Observability fill:#fffbeb,stroke:#d97706
     style ClickhouseCluster fill:#fef2f2,stroke:#dc2626
     style Monitoring fill:#f5f3ff,stroke:#7c3aed
@@ -198,10 +187,11 @@ sequenceDiagram
     A->>R: STEP_STARTED / REASONING_MESSAGE_* (thinking tokens)
     A->>R: TOOL_CALL_START / ARGS / END / RESULT (e.g. tavily_search)
     A->>R: TEXT_MESSAGE_START / CONTENT / END (answer tokens)
-    A->>R: RUN_FINISHED (or RUN_ERROR — terminal on its own)
+    A->>R: CUSTOM a2ui tree after each mutating event
+    A->>R: RUN_FINISHED or RUN_ERROR
     R-->>F: each event, in order
     F-->>B: re-emitted as SSE frames
-    Note over B: useSSEStream.ts parses events;<br/>Chat.tsx renders reasoning, tool calls,<br/>and the streamed answer live
+    Note over B: useSSEStream parses AG-UI frames and Chat renders live
 ```
 
 The same pipeline is reachable by other agents over **A2A**: a JSON-RPC `SendMessage` to `POST /a2a` enqueues the identical Celery task and maps the AG-UI terminal events onto A2A task states (`submitted → working → completed/failed`), with a 120s idle timeout guarding against dead workers.
@@ -226,8 +216,8 @@ The same pipeline is reachable by other agents over **A2A**: a JSON-RPC `SendMes
 - **Dual PgBouncer Pools (Transaction + Session)**
   Optimizes database connectivity by separating short-lived API queries from long-lived agent state connections.
 
-- **Citus-ready Data Layer**
-  Runs a coordinator + 2-worker Citus cluster with all tables keyed by `thread_id` as the intended shard key — but distribution is **not yet enabled** (no `create_distributed_table` calls; the LangGraph checkpoint tables are deliberately local due to a documented Citus/LangGraph `jsonb_each_text` incompatibility — see `.claude/rules/citus-thread-id-integrity.md`).
+- **Citus sharded by `thread_id`**
+  Coordinator + 2 workers. FastAPI startup registers the workers (`citus_add_node`) and distributes `api.threads` by `id`, `api.messages` by `thread_id` (colocated), and `api.users` as a reference table. LangGraph checkpoint tables are distributed by `thread_id` too; if Citus still rejects LangGraph's `jsonb_each_text` subquery they stay local on the coordinator (see `.claude/rules/citus-thread-id-integrity.md`).
 
 - **Langfuse Observability & Clickhouse**
   Provides deep tracing of agent trajectories, token usage analysis, and detailed execution logs for production debugging. Langfuse utilizes Redis/Valkey for asynchronous event queuing (via BullMQ), API key validation, and prompt caching.

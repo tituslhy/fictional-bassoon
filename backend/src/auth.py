@@ -1,8 +1,10 @@
 import os
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Annotated, Any
 
 import jwt
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from passlib.context import CryptContext
 
 # Configuration
@@ -44,3 +46,48 @@ def create_access_token(data: dict[str, Any], expires_delta: timedelta | None = 
     )
 
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)  # type: ignore[no-any-return]
+
+
+def decode_access_token(token: str) -> dict[str, Any]:
+    """Decode and verify a JWT created by ``create_access_token``.
+
+    Raises ``jwt.PyJWTError`` (expired, invalid signature, malformed) — callers
+    that sit on an HTTP boundary should translate that into 401.
+    """
+    return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])  # type: ignore[no-any-return]
+
+
+_bearer_scheme = HTTPBearer(auto_error=False)
+
+
+async def require_user_id(
+    creds: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)],
+) -> str:
+    """FastAPI dependency: Bearer JWT → ``user_id`` claim, or 401.
+
+    Lives here rather than inline in ``main.py`` so the history route (and any
+    future gated routes) don't deepen the auth-handlers-in-main drift.
+    Missing/invalid credentials are 401, not FastAPI's default HTTPBearer 403.
+    """
+    if creds is None or creds.scheme.lower() != "bearer" or not creds.credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    try:
+        payload = decode_access_token(creds.credentials)
+    except jwt.PyJWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from None
+    user_id = payload.get("user_id")
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return str(user_id)

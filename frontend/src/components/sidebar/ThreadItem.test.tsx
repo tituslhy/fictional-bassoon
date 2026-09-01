@@ -38,8 +38,8 @@ describe('ThreadItem', () => {
     );
 
     const itemDiv = container.querySelector('div[role="group"]');
-    expect(itemDiv).toHaveClass('bg-[#1a1a1a]');
-    expect(itemDiv).toHaveClass('text-[#e5e5e5]');
+    expect(itemDiv).toHaveClass('bg-white/[0.08]');
+    expect(itemDiv).toHaveClass('text-zinc-50');
   });
 
   it('should show inactive styling when isActive is false', () => {
@@ -48,8 +48,8 @@ describe('ThreadItem', () => {
     );
 
     const itemDiv = container.querySelector('div[role="group"]');
-    expect(itemDiv).toHaveClass('text-[#9ca3af]');
-    expect(itemDiv).toHaveClass('hover:bg-[#1a1a1a]');
+    expect(itemDiv).toHaveClass('text-zinc-400');
+    expect(itemDiv).toHaveClass('hover:bg-white/5');
   });
 
   it('should call onDelete when delete button is clicked', () => {

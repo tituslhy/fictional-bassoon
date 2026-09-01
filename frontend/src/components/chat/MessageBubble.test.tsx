@@ -14,7 +14,7 @@ describe('MessageBubble', () => {
       toolCalls: [],
     };
 
-    render(<MessageBubble message={message} isStreaming={false} />);
+    render(<MessageBubble message={message} />);
     expect(screen.getByText('Hello from user')).toBeInTheDocument();
   });
 
@@ -28,8 +28,23 @@ describe('MessageBubble', () => {
       toolCalls: [],
     };
 
-    render(<MessageBubble message={message} isStreaming={false} />);
+    render(<MessageBubble message={message} />);
     expect(screen.getByText('Something went wrong')).toBeInTheDocument();
+  });
+
+  it('should show streaming cursor only when this message is streaming', () => {
+    const streaming: ThreadMessage = {
+      id: '3',
+      role: 'assistant',
+      content: 'Hello from assistant',
+      status: 'streaming',
+      toolCalls: [],
+    };
+    const { container, rerender } = render(<MessageBubble message={streaming} />);
+    expect(container.querySelector('.animate-pulse')).toBeInTheDocument();
+
+    rerender(<MessageBubble message={{ ...streaming, status: 'done' }} />);
+    expect(container.querySelector('.animate-pulse')).not.toBeInTheDocument();
   });
 
   it('should render assistant reasoning and content', () => {
@@ -42,7 +57,7 @@ describe('MessageBubble', () => {
       toolCalls: [],
     };
 
-    render(<MessageBubble message={message} isStreaming={false} />);
+    render(<MessageBubble message={message} />);
     expect(screen.getByText('Hello from assistant')).toBeInTheDocument();
     // Reasoning is hidden by default in StreamingRenderer (collapsed)
     expect(screen.getByText('Show reasoning')).toBeInTheDocument();

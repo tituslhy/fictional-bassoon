@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import MessageList from './MessageList';
 import type { ThreadMessage } from '@/types';
@@ -45,10 +45,19 @@ describe('MessageList', () => {
   });
 
   it('should render empty list when no messages', () => {
-    const { container } = render(<MessageList messages={[]} isStreaming={false} />);
+    render(<MessageList messages={[]} isStreaming={false} />);
 
-    const messageContainer = container.querySelector('[class*="flex-1"]');
-    expect(messageContainer).toBeInTheDocument();
+    expect(screen.getByText('How can I help?')).toBeInTheDocument();
+  });
+
+  it('should send a starter prompt when a chip is clicked', () => {
+    const onPrompt = vi.fn();
+    render(<MessageList messages={[]} isStreaming={false} onPrompt={onPrompt} />);
+
+    fireEvent.click(screen.getByText('Search the web'));
+    expect(onPrompt).toHaveBeenCalledWith(
+      "What's the latest news about Citus sharding? Search for it."
+    );
   });
 
   it('should render messages with unique keys', () => {
@@ -177,7 +186,7 @@ describe('MessageList', () => {
     expect(screen.getByTestId('message-msg_1')).toBeInTheDocument();
   });
 
-  it('should pass isStreaming to MessageBubble components', () => {
+  it('should pass streaming only via message status, not a global flag', () => {
     const { rerender } = render(<MessageList messages={mockMessages} isStreaming={false} />);
 
     expect(screen.getByTestId('message-msg_1')).toBeInTheDocument();

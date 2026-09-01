@@ -7,14 +7,14 @@ import './globals.css';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'Fictional Bassoon',
-  description: 'AI Chat Assistant',
+  title: 'Relay',
+  description: 'Chat with a reasoning agent. Search when it needs facts.',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className="dark">
-      <body className={inter.className}>
+      <body className={`${inter.className} antialiased`}>
         <AuthProvider>
           <ThreadProvider>{children}</ThreadProvider>
         </AuthProvider>

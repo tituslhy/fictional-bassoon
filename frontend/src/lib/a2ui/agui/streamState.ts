@@ -68,9 +68,9 @@ export function applyAGUIStreamEvent(
     case 'RUN_ERROR':
       return { ...state, isStreaming: false };
 
-    // STEP_STARTED/FINISHED, TEXT_MESSAGE_START/END, REASONING_MESSAGE_START/END,
-    // TOOL_CALL_END, and the *_CHUNK variants: pure lifecycle/bracket
-    // markers, no state change needed for this app's read-only rendering.
+    case 'CUSTOM':
+      return state;
+
     default:
       return state;
   }

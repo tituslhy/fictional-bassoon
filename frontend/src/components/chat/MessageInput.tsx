@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Send } from 'lucide-react';
+import { ArrowUp } from 'lucide-react';
 
 interface MessageInputProps {
   onSend: (text: string) => void;
@@ -36,10 +36,10 @@ export default function MessageInput({ onSend, isStreaming, isEmpty }: MessageIn
   }, [text]);
 
   return (
-    <div className="border-t border-[#262626] px-4 py-4 bg-[#0a0a0a]">
+    <div className="px-4 pb-5 pt-2">
       <div className="mx-auto max-w-3xl">
         <form onSubmit={handleSubmit}>
-          <div className="relative flex items-end rounded-xl bg-[#1e1e1e] border border-[#262626] px-3 py-2 focus-within:border-[#3b82f6]/50 transition-colors">
+          <div className="relative flex items-end rounded-3xl bg-zinc-900/70 px-3 py-2 shadow-[0_0_0_1px_rgba(255,255,255,0.06),0_16px_40px_-24px_rgba(0,0,0,0.8)] backdrop-blur-md transition-shadow focus-within:shadow-[0_0_0_1px_rgba(129,140,248,0.45),0_0_0_6px_rgba(129,140,248,0.08)]">
             <textarea
               ref={textareaRef}
               value={text}
@@ -50,24 +50,25 @@ export default function MessageInput({ onSend, isStreaming, isEmpty }: MessageIn
                   handleSubmit(e);
                 }
               }}
-              placeholder="Type a message..."
+              placeholder={isStreaming ? 'Waiting for a reply…' : 'Ask anything…'}
               rows={1}
               disabled={isStreaming}
               aria-label="Message"
-              className="flex-1 resize-none bg-transparent text-sm text-[#e5e5e5] placeholder:text-[#6b7280] outline-none disabled:opacity-50 max-h-[200px] min-h-[24px] leading-5"
+              className="max-h-[200px] min-h-[24px] flex-1 resize-none bg-transparent py-2.5 pl-1 text-sm leading-5 text-zinc-100 outline-none placeholder:text-zinc-500 disabled:opacity-50"
             />
             <button
               type="submit"
               disabled={!text.trim() || isStreaming}
               aria-label="Send message"
-              className="ml-2 p-2 rounded-lg bg-[#3b82f6] text-white hover:bg-[#2563eb] disabled:opacity-30 disabled:cursor-not-allowed transition-colors shrink-0"
+              className="mb-0.5 ml-2 shrink-0 rounded-2xl bg-indigo-500 p-2 text-white shadow-sm shadow-indigo-500/30 transition-colors hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-30 disabled:shadow-none"
             >
-              <Send className="w-4 h-4" />
+              <ArrowUp className="h-4 w-4" />
             </button>
           </div>
         </form>
-        <p className="text-center text-[10px] text-[#6b7280] mt-2">
-          AI can make mistakes. Verify important information.
+        <p className="mt-2.5 text-center text-[11px] text-zinc-600">
+          Enter to send · Shift+Enter for a new line. Answers can be wrong. Check anything that
+          matters.
         </p>
       </div>
     </div>

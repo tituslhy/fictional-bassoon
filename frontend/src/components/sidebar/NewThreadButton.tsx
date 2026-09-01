@@ -10,10 +10,10 @@ export default function NewThreadButton({ onClick }: NewThreadButtonProps) {
   return (
     <button
       onClick={onClick}
-      className="flex w-full items-center gap-2 px-3 py-2.5 rounded-lg bg-[#3b82f6] text-sm text-white hover:bg-[#2563eb] transition-colors"
+      className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-500 px-3 py-2.5 text-sm font-medium text-white shadow-sm shadow-indigo-500/25 transition-colors hover:bg-indigo-400"
     >
-      <Plus className="w-4 h-4" />
-      New Thread
+      <Plus className="h-4 w-4" />
+      New chat
     </button>
   );
 }

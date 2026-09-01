@@ -61,6 +61,12 @@ export interface RunErrorStreamEvent extends AGUIStreamEventBase {
   message: string;
 }
 
+export interface CustomA2UIStreamEvent extends AGUIStreamEventBase {
+  type: 'CUSTOM';
+  name: string;
+  value: unknown;
+}
+
 /** Lifecycle/bracket markers this app's read-only rendering ignores the payload of. */
 export interface LifecycleStreamEvent extends AGUIStreamEventBase {
   type:
@@ -85,6 +91,7 @@ export type AGUIStreamEvent =
   | ToolCallArgsStreamEvent
   | ToolCallResultStreamEvent
   | RunErrorStreamEvent
+  | CustomA2UIStreamEvent
   | LifecycleStreamEvent;
 
 /**
@@ -133,6 +140,13 @@ export function parseAGUIStreamEvent(event: SSEEvent): AGUIStreamEvent | null {
 
     case 'RUN_ERROR':
       return { type: 'RUN_ERROR', message: String(data.message ?? '') };
+
+    case 'CUSTOM':
+      return {
+        type: 'CUSTOM',
+        name: String(data.name ?? ''),
+        value: data.value,
+      };
 
     case 'RUN_STARTED':
     case 'RUN_FINISHED':

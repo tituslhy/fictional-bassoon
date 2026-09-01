@@ -162,6 +162,8 @@ services:
 
   citus_worker_1:
     image: citusdata/citus:13.0
+    container_name: citus_worker_1
+    hostname: citus_worker_1
     platform: linux/amd64
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
@@ -182,6 +184,8 @@ services:
 
   citus_worker_2:
     image: citusdata/citus:13.0
+    container_name: citus_worker_2
+    hostname: citus_worker_2
     platform: linux/amd64
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
@@ -732,8 +736,15 @@ services:
       TAVILY_API_KEY: ${TAVILY_API_KEY}
       JWT_SECRET: ${JWT_SECRET}
       LANGFUSE_HOST: http://langfuse-web:3000
+      CITUS_COORDINATOR_HOST: citus_coordinator
+      CITUS_COORDINATOR_PORT: "5432"
+      CITUS_WORKER_NODES: citus_worker_1:5432,citus_worker_2:5432
     depends_on:
       citus_coordinator:
+        condition: service_healthy
+      citus_worker_1:
+        condition: service_healthy
+      citus_worker_2:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -773,6 +784,10 @@ services:
       LANGFUSE_HOST: http://langfuse-web:3000
     depends_on:
       citus_coordinator:
+        condition: service_healthy
+      citus_worker_1:
+        condition: service_healthy
+      citus_worker_2:
         condition: service_healthy
       redis:
         condition: service_healthy

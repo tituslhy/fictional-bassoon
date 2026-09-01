@@ -7,6 +7,7 @@ FastAPI streaming backend for a LangGraph Deep Agent, speaking the **AG-UI proto
 This backend exposes:
 
 - `POST /chat` — accepts user messages and streams **AG-UI protocol events** (`ag-ui-protocol==0.1.21`) back via Server-Sent Events (SSE).
+- `GET /threads/{thread_id}/history` — hydrate a thread's transcript from the LangGraph checkpointer (`{ "messages": ThreadMessage[] }`). JWT required; 404 if the caller does not own the thread.
 - `POST /auth/signup` / `POST /auth/login` — account creation and JWT authentication (synchronous, no queue).
 - `GET /.well-known/agent-card.json` — the **A2A Agent Card** describing this service to other agents.
 - `POST /a2a` — the **A2A JSON-RPC endpoint** (`a2a-sdk[fastapi]==1.1.2`): other agents call `SendMessage` and get the same chat pipeline, with A2A `taskId` == `job_id` and `contextId` == `thread_id`.
@@ -122,7 +123,7 @@ docker compose down
 
 The Docker setup includes:
 
-- **Citus Cluster** — distributed state persistence
+- **Citus Cluster** — coordinator + 2 workers; `api.threads` / `api.messages` sharded by `thread_id` at FastAPI bootstrap
 - **Redis Sentinel Cluster** — high-availability pub/sub, task queuing, and caching
 - **Clickhouse Cluster** — high-performance analytics for observability
 - **Minio** — S3-compatible object storage for observability data
@@ -238,8 +239,8 @@ Simple health check.
 ```
 backend/
 ├── main.py                      # FastAPI app entry point
-│                                # Routes: POST /chat, /auth/*, GET /health,
-│                                # A2A router (/a2a + agent card) via include_router
+│                                # Routes: POST /chat, GET /threads/{id}/history,
+│                                # /auth/*, GET /health, A2A router (/a2a + agent card)
 ├── pyproject.toml               # Python dependencies (ag-ui-protocol + a2a-sdk pinned)
 ├── uv.lock                      # Locked dependency lockfile
 ├── .env                         # Environment variables (DO NOT commit)
@@ -247,7 +248,8 @@ backend/
 │
 ├── src/
 │   ├── agent.py                 # LangGraph DeepAgent construction (create_agent/get_agent)
-│   ├── auth.py                  # Authentication logic
+│   ├── history.py               # Checkpointer → HistoryMessage mapper
+│   ├── auth.py                  # Authentication logic (incl. require_user_id)
 │   ├── celery_app.py            # Celery app configuration
 │   ├── db.py                    # asyncpg connection pooling
 │   ├── db_bootstrap.py          # Schema bootstrap (tables, roles, RLS) on startup
@@ -265,7 +267,8 @@ backend/
 │       └── worker_runner.py     # Async agent execution, publishes AG-UI events
 │
 ├── utils/
-│   └── streaming.py             # LangGraph events → AG-UI protocol events
+│   ├── streaming.py             # LangGraph events → AG-UI protocol events
+│   └── a2ui.py                  # 4-type A2UI tree build + validate
 │
 ├── tests/                       # pytest suite (95% coverage)
 │

@@ -1,22 +1,32 @@
 """FastAPI application with SSE chat and health endpoints."""
 
+import asyncio
 import json
 import logging
 from contextlib import asynccontextmanager
 from logging.config import fileConfig
 from pathlib import Path
+from typing import Annotated
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, status
+from ag_ui.core.events import (
+    ReasoningMessageEndEvent,
+    RunErrorEvent,
+    StepFinishedEvent,
+    TextMessageEndEvent,
+)
+from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 from prometheus_fastapi_instrumentator import Instrumentator
 
-from src.auth import create_access_token, hash_password, verify_password
+from src.auth import create_access_token, hash_password, require_user_id, verify_password
 from src.db import close_db_pool, get_db_pool
 from src.db_bootstrap import ensure_api_schema
+from src.history import checkpoint_messages_to_history, load_checkpoint_messages
 from src.models.auth_models import LoginRequest, SignupRequest, TokenResponse
-from src.models.chat_models import ChatRequest, HealthResponse
+from src.models.chat_models import ChatRequest, HealthResponse, HistoryResponse
+from src.protocol.executor import IDLE_TIMEOUT_SECONDS
 from src.protocol.router import build_a2a_router
 from src.queue.redis_pubsub import redis_client, subscribe
 from src.worker.tasks import run_agent_task
@@ -103,6 +113,46 @@ async def login(request: LoginRequest):
 _TERMINAL_EVENT_TYPES = {"RUN_FINISHED", "RUN_ERROR"}
 
 
+def _agui_payload_field(data_payload: str, *keys: str) -> str | None:
+    """Read a camelCase (or snake_case) field from an AG-UI SSE data payload."""
+    try:
+        parsed = json.loads(data_payload)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    for key in keys:
+        value = parsed.get(key)
+        if value:
+            return str(value)
+    return None
+
+
+def _idle_timeout_close_events(
+    text_message_id: str | None,
+    reasoning_message_id: str | None,
+    step_name: str | None,
+) -> list[ServerSentEvent]:
+    """Close any open AG-UI brackets before a synthesized idle ``RUN_ERROR``."""
+    events: list[ServerSentEvent] = []
+    if text_message_id:
+        ev = TextMessageEndEvent(message_id=text_message_id)
+        events.append(
+            ServerSentEvent(raw_data=ev.model_dump_json(by_alias=True), event=ev.type.value)
+        )
+    if reasoning_message_id:
+        ev = ReasoningMessageEndEvent(message_id=reasoning_message_id)
+        events.append(
+            ServerSentEvent(raw_data=ev.model_dump_json(by_alias=True), event=ev.type.value)
+        )
+    if step_name:
+        ev = StepFinishedEvent(step_name=step_name)
+        events.append(
+            ServerSentEvent(raw_data=ev.model_dump_json(by_alias=True), event=ev.type.value)
+        )
+    return events
+
+
 @app.post("/chat", response_class=EventSourceResponse)
 async def chat(request: ChatRequest):
     """Stream agent events via SSE.
@@ -131,8 +181,35 @@ async def chat(request: ChatRequest):
         logger.exception("failed to enqueue chat task: job_id=%s", job_id)
         raise
 
+    listener = pubsub.listen()
+    open_text_id: str | None = None
+    open_reasoning_id: str | None = None
+    open_step: str | None = None
     try:
-        async for message in pubsub.listen():
+        while True:
+            try:
+                message = await asyncio.wait_for(listener.__anext__(), timeout=IDLE_TIMEOUT_SECONDS)
+            except TimeoutError:
+                logger.warning(
+                    "chat idle timeout after %.0fs: job_id=%s (worker presumed dead)",
+                    IDLE_TIMEOUT_SECONDS,
+                    job_id,
+                )
+                for close_event in _idle_timeout_close_events(
+                    open_text_id, open_reasoning_id, open_step
+                ):
+                    yield close_event
+                error_event = RunErrorEvent(
+                    message=(f"Worker idle timeout: no events for {int(IDLE_TIMEOUT_SECONDS)}s")
+                )
+                yield ServerSentEvent(
+                    raw_data=error_event.model_dump_json(by_alias=True),
+                    event=error_event.type.value,
+                )
+                break
+            except StopAsyncIteration:
+                break
+
             if message["type"] != "message":
                 continue
 
@@ -147,6 +224,19 @@ async def chat(request: ChatRequest):
             else:
                 data_payload = json.dumps(event)
 
+            if event_type == "TEXT_MESSAGE_START":
+                open_text_id = _agui_payload_field(data_payload, "messageId", "message_id")
+            elif event_type == "TEXT_MESSAGE_END":
+                open_text_id = None
+            elif event_type == "REASONING_MESSAGE_START":
+                open_reasoning_id = _agui_payload_field(data_payload, "messageId", "message_id")
+            elif event_type == "REASONING_MESSAGE_END":
+                open_reasoning_id = None
+            elif event_type == "STEP_STARTED":
+                open_step = _agui_payload_field(data_payload, "stepName", "step_name")
+            elif event_type == "STEP_FINISHED":
+                open_step = None
+
             # Use ServerSentEvent with raw_data to maintain exact string parity
             # with the previous implementation (avoiding double JSON encoding).
             yield ServerSentEvent(raw_data=data_payload, event=event_type)
@@ -157,6 +247,33 @@ async def chat(request: ChatRequest):
     finally:
         await pubsub.unsubscribe(f"stream:{job_id}")
         await pubsub.close()
+
+
+@app.get("/threads/{thread_id}/history", response_model=HistoryResponse)
+async def thread_history(
+    thread_id: str,
+    user_id: Annotated[str, Depends(require_user_id)],
+) -> HistoryResponse:
+    """Hydrate a thread's transcript from the LangGraph checkpointer.
+
+    Ownership is enforced here (FastAPI's pool is privileged — PostgREST RLS
+    does not apply). Missing or not-owned threads return 404. Empty
+    checkpoint → ``{"messages": []}``. Does not expose checkpoint tables
+    through PostgREST and does not construct the agent.
+    """
+    pool = await get_db_pool()
+    async with pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "SELECT 1 FROM api.threads WHERE id = %s AND user_id = %s",
+                (thread_id, user_id),
+            )
+            owned = await cur.fetchone()
+    if not owned:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found")
+
+    raw = await load_checkpoint_messages(pool, thread_id)
+    return HistoryResponse(messages=checkpoint_messages_to_history(raw))
 
 
 @app.get("/health")

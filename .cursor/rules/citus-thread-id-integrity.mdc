@@ -1,5 +1,5 @@
 ---
-description: AG-UI/A2A IDs must resolve to the existing thread_id; Citus distribution is not actually enabled yet.
+description: AG-UI/A2A IDs must resolve to the existing thread_id; Citus shards api.threads/messages by thread_id at bootstrap.
 globs: backend/docker/citus/init.sql, backend/src/db_bootstrap.py, backend/src/models/chat_models.py, backend/src/protocol/**
 alwaysApply: false
 ---
@@ -8,19 +8,31 @@ alwaysApply: false
 
 ## Context — read this before assuming anything about sharding
 
-`backend/docker/citus/init.sql` has a comment block stating, explicitly, that
-the LangGraph checkpoint tables (`checkpoints`, `checkpoint_blobs`,
-`checkpoint_writes`) are deliberately **not** Citus-distributed, because of a
-known incompatibility between Citus and LangGraph's correlated subqueries
-over `jsonb_each_text`. They're local tables on the coordinator, keyed by
-`thread_id` in their primary key, but not sharded by it.
+Citus **is** clustered at runtime: FastAPI startup (`backend/src/db_bootstrap.py`)
+calls `citus_set_coordinator_host`, `citus_add_node` for each entry in
+`CITUS_WORKER_NODES`, then distributes tables. Compose wires
+`citus_worker_1:5432,citus_worker_2:5432` and waits for both workers to be
+healthy before the backend starts. `init.sql` only CREATE TABLEs — it cannot
+register workers that are not up yet.
 
-Further: there is no `create_distributed_table` call anywhere in this repo —
-not for those tables, not for `api.users` / `api.threads` / `api.messages`.
-Despite `CLAUDE.md` describing the database as "sharded by thread_id,"
-nothing is currently Citus-distributed. The coordinator + 2-worker cluster
-exists, but distribution hasn't been turned on. `thread_id` is the intended
-future shard key by schema design, not the present reality.
+Distribution:
+
+- `api.users` — **reference table** (replicated). Required so
+  `api.threads.user_id` can keep its FK.
+- `api.threads` — distributed by `id` (the thread_id shard key).
+- `api.messages` — distributed by `thread_id`, colocated with `api.threads`.
+  Primary key is `(thread_id, id)` because Citus unique/PK constraints must
+  include the distribution column. Existing volumes with PK `(id)` are
+  migrated on bootstrap.
+- LangGraph `checkpoints` / `checkpoint_blobs` / `checkpoint_writes` —
+  distributed by `thread_id` and colocated with each other. If Citus still
+  rejects LangGraph's `jsonb_each_text` correlated subquery (`invalid
+  attnum`), bootstrap **logs and leaves those tables local** rather than
+  failing the API schema. Re-verify against the installed
+  `langgraph-checkpoint-postgres` before assuming they sharded.
+
+`thread_id` / `api.threads.id` remain the one session key. AG-UI run IDs and
+A2A `taskId`/`contextId` must resolve to that pair — no third ID system.
 
 ## Hard rules
 
@@ -28,11 +40,10 @@ future shard key by schema design, not the present reality.
   context ID) must resolve to the existing `thread_id` value already threaded
   through `ChatRequest`, the checkpoint tables, and `api.threads`. Do not
   introduce a second, parallel session/task ID system.
-- If this rewrite is the moment distribution actually gets turned on,
-  re-verify the documented `jsonb_each_text` incompatibility against the
-  current `langgraph-checkpoint-postgres` version before running
-  `create_distributed_table` on the checkpoint tables — the workaround
-  comment predates this rewrite and may or may not still apply.
-- Don't update `CLAUDE.md`'s "sharded by thread_id" language to imply
-  distribution is active unless it actually is. Say "keyed by thread_id,
-  distribution not yet enabled" until that changes.
+- Do not add `create_distributed_table` calls outside `db_bootstrap.py`.
+  Worker membership belongs there too (idempotent `citus_add_node`), not a
+  new compose service.
+- Don't describe the cluster as "distribution not yet enabled". Say
+  `api.threads` / `api.messages` are sharded by `thread_id`, users are a
+  reference table, and checkpoint tables are sharded unless bootstrap
+  recorded a fallback.

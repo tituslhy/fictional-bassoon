@@ -107,7 +107,7 @@ hooks phase.
 
 ## Key infrastructure details
 
-- **Database**: PostgreSQL with Citus extension. Schema in `backend/src/db_bootstrap.py` (api.users, api.threads, api.messages with Row-Level Security) plus LangGraph checkpoint tables in `backend/docker/citus/init.sql`, both keyed by `thread_id` — see `citus-thread-id-integrity.md` for the current (non-)distribution state before assuming this is sharded. Connection pooling via PgBouncer on port 6432.
+- **Database**: PostgreSQL with Citus. Coordinator + 2 workers; FastAPI bootstrap registers the workers and shards `api.threads` / `api.messages` by `thread_id` (`api.users` is a reference table). LangGraph checkpoint tables are distributed by `thread_id` as well, with a local fallback if Citus still rejects LangGraph's `jsonb_each_text` query — see `citus-thread-id-integrity.md`. Connection pooling via PgBouncer on port 6432.
 - **Broker**: RabbitMQ (`BROKER_URL`). Celery result backend is Redis.
 - **Redis**: Sentinel cluster (3 nodes + 3 sentinels) for HA. `redis_pubsub.py` supports Sentinel mode via `REDIS_SENTINEL_HOSTS`.
 - **Observability**: Langfuse for LLM traces, Prometheus + Grafana + Loki + Tempo (LGTM stack). Celery worker starts a Prometheus metrics server on startup.
@@ -144,6 +144,6 @@ Frontend expects `NEXT_PUBLIC_API_URL` in `frontend/.env.local` (default: `http:
 
 The backend (`backend/utils/streaming.py`) emits AG-UI protocol events (`ag-ui-protocol==0.1.21`, pinned — see `.claude/rules/protocol-version-pinning.md`) over the `/chat` SSE stream; the frontend `useSSEStream.ts` hook parses them and `Chat.tsx` consumes them:
 
-`RUN_STARTED` · `RUN_FINISHED` · `RUN_ERROR` · `STEP_STARTED` · `STEP_FINISHED` · `TEXT_MESSAGE_START/CONTENT/END` · `REASONING_MESSAGE_START/CONTENT/END` · `TOOL_CALL_START/ARGS/END/RESULT`
+`RUN_STARTED` · `RUN_FINISHED` · `RUN_ERROR` · `STEP_STARTED` · `STEP_FINISHED` · `TEXT_MESSAGE_START/CONTENT/END` · `REASONING_MESSAGE_START/CONTENT/END` · `TOOL_CALL_START/ARGS/END/RESULT` · `CUSTOM` (`name: "a2ui"` — nested 4-type A2UI tree in `value`)
 
 `RUN_FINISHED` and `RUN_ERROR` are the terminal events (`RUN_ERROR` is never followed by `RUN_FINISHED`). Payloads are camelCase JSON on the `data` field with the type name duplicated on the SSE `event:` field — a documented deviation from AG-UI's reference encoder, kept for the hand-rolled `parseSSE()` (see the pin note in `protocol-version-pinning.md`). The pre-migration vocabulary (`reasoning`/`tool_call`/`tool_result`/`answer`/`agent`/`error`/`done`) is retired.

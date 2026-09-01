@@ -17,20 +17,20 @@ The frontend consists of three main areas:
 ```mermaid
 flowchart LR
     subgraph Backend
-        BE["/chat SSE stream<br/>(AG-UI events)"]
+        BE["chat SSE stream AG-UI events"]
     end
     subgraph Hook["useSSEStream.ts"]
-        P["parseSSE()<br/>event: + data: frames"]
-        T["TERMINAL_EVENTS<br/>RUN_FINISHED / RUN_ERROR"]
+        P["parseSSE event and data frames"]
+        T["TERMINAL RUN_FINISHED or RUN_ERROR"]
     end
     subgraph Chat["Chat.tsx"]
         S["handleMessageEvent switch"]
-        M["ThreadMessage state<br/>content · reasoning · toolCalls · status"]
+        M["ThreadMessage state"]
     end
     subgraph Render
         MB["MessageBubble"]
         SR["StreamingRenderer"]
-        A2["lib/a2ui: validated tree →<br/>Reasoning / ToolCall / Markdown blocks"]
+        A2["lib/a2ui validated tree"]
     end
 
     BE --> P --> S --> M --> MB --> SR --> A2
@@ -44,8 +44,9 @@ Event handling in `Chat.tsx`:
 | `REASONING_MESSAGE_CONTENT` | append `delta` to `reasoning` |
 | `TEXT_MESSAGE_CONTENT` | append `delta` to `content` |
 | `TOOL_CALL_START` / `ARGS` / `RESULT` | create / accumulate args on / resolve a tool call, keyed by `toolCallId` |
-| `RUN_FINISHED` | finalize with `status: 'done'` (persisted) |
-| `RUN_ERROR` | finalize with `status: 'error'` + error text — rendered as a red error bubble and persisted |
+| `CUSTOM` (`name: a2ui`) | attach the validated 4-type tree to `message.a2ui` (fallback: `buildLegacyStreamTree`) |
+| `RUN_FINISHED` | finalize with `status: 'done'` |
+| `RUN_ERROR` | finalize with `status: 'error'` + error text — rendered as a red error bubble |
 | lifecycle markers (`RUN_STARTED`, `STEP_*`, `*_START`/`*_END`) | no state change |
 
 ## Tech Stack

@@ -53,6 +53,17 @@ describe('parseAGUIStreamEvent', () => {
     expect(result).toEqual({ type: 'TOOL_CALL_END' });
   });
 
+  it('parses CUSTOM a2ui payloads', () => {
+    const result = parseAGUIStreamEvent(
+      frame('CUSTOM', { type: 'CUSTOM', name: 'a2ui', value: { id: 'root', component: 'column', children: [] } })
+    );
+    expect(result).toEqual({
+      type: 'CUSTOM',
+      name: 'a2ui',
+      value: { id: 'root', component: 'column', children: [] },
+    });
+  });
+
   it('returns null for malformed JSON data', () => {
     const result = parseAGUIStreamEvent({ event: 'TEXT_MESSAGE_CONTENT', data: 'not json' });
     expect(result).toBeNull();

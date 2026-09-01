@@ -14,14 +14,17 @@ export default function ThreadItem({ thread, isActive, onClick, onDelete }: Thre
   return (
     <div
       role="group"
-      className={`group w-full flex items-center gap-3 px-3 py-2.5 transition-colors
-        ${isActive ? 'bg-[#1a1a1a] text-[#e5e5e5]' : 'text-[#9ca3af] hover:bg-[#1a1a1a] hover:text-[#e5e5e5]'}`}
+      className={`group mb-0.5 flex w-full items-center gap-2 rounded-xl px-2.5 py-2 transition-colors ${
+        isActive
+          ? 'bg-white/[0.08] text-zinc-50 ring-1 ring-white/10'
+          : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-100'
+      }`}
     >
-      <button onClick={onClick} className="flex items-center gap-3 flex-1 min-w-0 text-left">
+      <button onClick={onClick} className="flex min-w-0 flex-1 items-center gap-2.5 text-left">
         <MessageSquare
-          className={`w-4 h-4 shrink-0 ${isActive ? 'text-[#3b82f6]' : 'text-[#6b7280]'}`}
+          className={`h-4 w-4 shrink-0 ${isActive ? 'text-indigo-400' : 'text-zinc-600'}`}
         />
-        <span className="truncate text-sm flex-1">{thread.title}</span>
+        <span className="flex-1 truncate text-sm">{thread.title}</span>
       </button>
       <button
         onClick={e => {
@@ -29,9 +32,9 @@ export default function ThreadItem({ thread, isActive, onClick, onDelete }: Thre
           onDelete();
         }}
         aria-label={`Delete ${thread.title}`}
-        className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity p-1"
+        className="shrink-0 rounded-md p-1 opacity-0 transition-opacity group-hover:opacity-100"
       >
-        <Trash2 className="w-3.5 h-3.5 text-[#6b7280] hover:text-[#ef4444] transition-colors" />
+        <Trash2 className="h-3.5 w-3.5 text-zinc-500 transition-colors hover:text-red-400" />
       </button>
     </div>
   );

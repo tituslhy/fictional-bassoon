@@ -12,7 +12,7 @@ describe('MessageInput', () => {
     const mockOnSend = vi.fn();
     render(<MessageInput onSend={mockOnSend} isStreaming={false} isEmpty={true} />);
 
-    const textarea = screen.getByPlaceholderText('Type a message...');
+    const textarea = screen.getByPlaceholderText('Ask anything…');
     expect(textarea).toBeInTheDocument();
   });
 
@@ -28,7 +28,7 @@ describe('MessageInput', () => {
     const mockOnSend = vi.fn();
     render(<MessageInput onSend={mockOnSend} isStreaming={false} isEmpty={true} />);
 
-    const textarea = screen.getByPlaceholderText('Type a message...');
+    const textarea = screen.getByPlaceholderText('Ask anything…');
     const sendBtn = screen.getByRole('button', { name: /Send message/i });
 
     await userEvent.type(textarea, 'Hello world');
@@ -41,7 +41,7 @@ describe('MessageInput', () => {
     const mockOnSend = vi.fn();
     render(<MessageInput onSend={mockOnSend} isStreaming={false} isEmpty={true} />);
 
-    const textarea = screen.getByPlaceholderText('Type a message...') as HTMLTextAreaElement;
+    const textarea = screen.getByPlaceholderText('Ask anything…') as HTMLTextAreaElement;
     const sendBtn = screen.getByRole('button', { name: /Send message/i });
 
     await userEvent.type(textarea, 'Test message');
@@ -54,7 +54,7 @@ describe('MessageInput', () => {
     const mockOnSend = vi.fn();
     render(<MessageInput onSend={mockOnSend} isStreaming={false} isEmpty={true} />);
 
-    const textarea = screen.getByPlaceholderText('Type a message...');
+    const textarea = screen.getByPlaceholderText('Ask anything…');
     const sendBtn = screen.getByRole('button', { name: /Send message/i });
 
     await userEvent.type(textarea, '  Hello world  ');
@@ -77,7 +77,7 @@ describe('MessageInput', () => {
     const mockOnSend = vi.fn();
     render(<MessageInput onSend={mockOnSend} isStreaming={false} isEmpty={true} />);
 
-    const textarea = screen.getByPlaceholderText('Type a message...');
+    const textarea = screen.getByPlaceholderText('Ask anything…');
     await userEvent.type(textarea, '   ');
     const sendBtn = screen.getByRole('button', { name: /Send message/i });
     fireEvent.click(sendBtn);
@@ -89,7 +89,7 @@ describe('MessageInput', () => {
     const mockOnSend = vi.fn();
     render(<MessageInput onSend={mockOnSend} isStreaming={true} isEmpty={false} />);
 
-    const textarea = screen.getByPlaceholderText('Type a message...') as HTMLTextAreaElement;
+    const textarea = screen.getByLabelText('Message') as HTMLTextAreaElement;
     expect(textarea).toBeDisabled();
   });
 
@@ -113,7 +113,7 @@ describe('MessageInput', () => {
     const mockOnSend = vi.fn();
     render(<MessageInput onSend={mockOnSend} isStreaming={false} isEmpty={true} />);
 
-    const textarea = screen.getByPlaceholderText('Type a message...');
+    const textarea = screen.getByPlaceholderText('Ask anything…');
     const sendBtn = screen.getByRole('button', { name: /Send message/i }) as HTMLButtonElement;
 
     expect(sendBtn).toBeDisabled();
@@ -127,7 +127,7 @@ describe('MessageInput', () => {
     const mockOnSend = vi.fn();
     render(<MessageInput onSend={mockOnSend} isStreaming={false} isEmpty={true} />);
 
-    const textarea = screen.getByPlaceholderText('Type a message...');
+    const textarea = screen.getByPlaceholderText('Ask anything…');
 
     await userEvent.type(textarea, 'Hello{Enter}');
 
@@ -138,7 +138,7 @@ describe('MessageInput', () => {
     const mockOnSend = vi.fn();
     render(<MessageInput onSend={mockOnSend} isStreaming={false} isEmpty={true} />);
 
-    const textarea = screen.getByPlaceholderText('Type a message...') as HTMLTextAreaElement;
+    const textarea = screen.getByPlaceholderText('Ask anything…') as HTMLTextAreaElement;
 
     await userEvent.type(textarea, 'Hello');
     fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: true });
@@ -153,7 +153,7 @@ describe('MessageInput', () => {
     const mockOnSend = vi.fn();
     render(<MessageInput onSend={mockOnSend} isStreaming={true} isEmpty={false} />);
 
-    const textarea = screen.getByPlaceholderText('Type a message...');
+    const textarea = screen.getByLabelText('Message');
 
     fireEvent.keyDown(textarea, { key: 'Enter' });
 
@@ -165,7 +165,7 @@ describe('MessageInput', () => {
     render(<MessageInput onSend={mockOnSend} isStreaming={false} isEmpty={true} />);
 
     await waitFor(() => {
-      const textarea = screen.getByPlaceholderText('Type a message...');
+      const textarea = screen.getByPlaceholderText('Ask anything…');
       expect(document.activeElement).toBe(textarea);
     });
   });
@@ -174,7 +174,7 @@ describe('MessageInput', () => {
     const mockOnSend = vi.fn();
     render(<MessageInput onSend={mockOnSend} isStreaming={false} isEmpty={true} />);
 
-    const textarea = screen.getByPlaceholderText('Type a message...');
+    const textarea = screen.getByPlaceholderText('Ask anything…');
     const sendBtn = screen.getByRole('button', { name: /Send message/i });
 
     await userEvent.type(textarea, 'Test');
@@ -189,14 +189,14 @@ describe('MessageInput', () => {
     const mockOnSend = vi.fn();
     render(<MessageInput onSend={mockOnSend} isStreaming={false} isEmpty={true} />);
 
-    expect(screen.getByText(/AI can make mistakes/)).toBeInTheDocument();
+    expect(screen.getByText(/Answers can be wrong/)).toBeInTheDocument();
   });
 
   it('should auto-expand textarea as text is added', async () => {
     const mockOnSend = vi.fn();
     render(<MessageInput onSend={mockOnSend} isStreaming={false} isEmpty={true} />);
 
-    const textarea = screen.getByPlaceholderText('Type a message...') as HTMLTextAreaElement;
+    const textarea = screen.getByPlaceholderText('Ask anything…') as HTMLTextAreaElement;
 
     await userEvent.type(textarea, 'A'.repeat(100));
 
@@ -212,7 +212,7 @@ describe('MessageInput', () => {
       <MessageInput onSend={mockOnSend} isStreaming={false} isEmpty={true} />
     );
 
-    const textarea = screen.getByPlaceholderText('Type a message...') as HTMLTextAreaElement;
+    const textarea = screen.getByPlaceholderText('Ask anything…') as HTMLTextAreaElement;
 
     // Component should focus the textarea during mount
     await waitFor(() => {
@@ -224,7 +224,7 @@ describe('MessageInput', () => {
     const mockOnSend = vi.fn();
     render(<MessageInput onSend={mockOnSend} isStreaming={true} isEmpty={true} />);
 
-    const textarea = screen.getByPlaceholderText('Type a message...') as HTMLTextAreaElement;
+    const textarea = screen.getByLabelText('Message') as HTMLTextAreaElement;
 
     // Should not auto-focus when streaming
     // (Focusing behavior is controlled by the parent, this component just respects the prop)

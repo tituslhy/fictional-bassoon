@@ -20,55 +20,80 @@ interface ThreadContextType {
   deleteThread: (id: string) => Promise<void>;
   addMessage: (threadId: string, msg: ThreadMessage) => Promise<void>;
   updateThreadTitle: (threadId: string, title: string) => Promise<void>;
-  updateThreadMessages: (threadId: string, messages: ThreadMessage[]) => void; // Keeping sync version for streaming updates
+  updateThreadMessages: (threadId: string, messages: ThreadMessage[]) => void;
 }
 
 const ThreadContext = createContext<ThreadContextType | undefined>(undefined);
 
 const DB_BASE = process.env.NEXT_PUBLIC_DB_URL || 'http://localhost:3002';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export function ThreadProvider({ children }: { children: ReactNode }) {
   const [threads, setThreadsState] = useState<Thread[]>([]);
   const [activeThreadId, setActiveThreadIdState] = useState<string | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const { token, user } = useAuth();
+  const hydratedIdsRef = useRef<Set<string>>(new Set());
+  const inflightIdsRef = useRef<Set<string>>(new Set());
 
-  // Fetch threads from PostgREST on mount or token change
+  const hydrateThread = useCallback(
+    async (id: string) => {
+      if (!token || !id) return;
+      if (hydratedIdsRef.current.has(id) || inflightIdsRef.current.has(id)) return;
+      inflightIdsRef.current.add(id);
+      try {
+        const res = await fetch(`${API_BASE}/threads/${id}/history`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) {
+          console.error('Failed to hydrate thread history:', res.status);
+          return;
+        }
+        const data = await res.json();
+        const messages: ThreadMessage[] = (data.messages || []).map((m: ThreadMessage) => ({
+          ...m,
+          toolCalls: m.toolCalls || [],
+        }));
+        setThreadsState(prev => prev.map(t => (t.id === id ? { ...t, messages } : t)));
+        hydratedIdsRef.current.add(id);
+      } catch (err) {
+        console.error('Failed to hydrate thread history:', err);
+      } finally {
+        inflightIdsRef.current.delete(id);
+      }
+    },
+    [token]
+  );
+
   useEffect(() => {
     if (!token || !user) {
       setThreadsState([]);
       setIsLoaded(true);
+      hydratedIdsRef.current.clear();
+      inflightIdsRef.current.clear();
       return;
     }
 
     const fetchThreads = async () => {
       try {
-        const res = await fetch(`${DB_BASE}/threads?select=*,messages(*)&order=updated_at.desc`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
+        const res = await fetch(
+          `${DB_BASE}/threads?select=id,title,updated_at&order=updated_at.desc`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
         if (res.ok) {
           const data = await res.json();
-          const formatted: Thread[] = data.map((t: any) => ({
-            id: t.id,
-            title: t.title,
-            updatedAt: new Date(t.updated_at).getTime(),
-            messages: (t.messages || [])
-              .sort(
-                (a: any, b: any) =>
-                  new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()
-              )
-              .map((m: any) => ({
-                id: m.id,
-                role: m.role,
-                content: m.content,
-                reasoning: m.reasoning,
-                toolCalls: m.tool_calls,
-                status: m.status,
-                error: m.error,
-              })),
-          }));
+          const formatted: Thread[] = data.map(
+            (t: { id: string; title: string; updated_at: string }) => ({
+              id: t.id,
+              title: t.title,
+              updatedAt: new Date(t.updated_at).getTime(),
+              messages: [],
+            })
+          );
           setThreadsState(formatted);
           setActiveThreadIdState(current => current ?? formatted[0]?.id ?? null);
         }
@@ -85,22 +110,33 @@ export function ThreadProvider({ children }: { children: ReactNode }) {
   const setActiveThreadId = useCallback(
     (id: string | null) => {
       setActiveThreadIdState(id);
+      // Re-clicking the same unhydrated thread must retry (React bails on
+      // setState(same id), so the activeThreadId effect would not re-run).
+      if (id && !hydratedIdsRef.current.has(id)) {
+        void hydrateThread(id);
+      }
     },
-    [setActiveThreadIdState]
+    [hydrateThread]
   );
+
+  useEffect(() => {
+    if (activeThreadId) {
+      void hydrateThread(activeThreadId);
+    }
+  }, [activeThreadId, hydrateThread]);
 
   const createThread = useCallback(async () => {
     const tempId = crypto.randomUUID();
 
-    // Add to local state immediately for UI responsiveness
     const newThread: Thread = {
       id: tempId,
-      title: 'New Thread',
+      title: 'New chat',
       messages: [],
       updatedAt: Date.now(),
     };
     setThreadsState(prev => [newThread, ...prev]);
-    setActiveThreadId(tempId);
+    setActiveThreadIdState(tempId);
+    hydratedIdsRef.current.add(tempId);
 
     if (token) {
       try {
@@ -114,7 +150,7 @@ export function ThreadProvider({ children }: { children: ReactNode }) {
           body: JSON.stringify({
             id: tempId,
             user_id: user?.id,
-            title: 'New Thread',
+            title: 'New chat',
           }),
         });
         if (!res.ok) throw new Error('Failed to persist thread');
@@ -124,16 +160,18 @@ export function ThreadProvider({ children }: { children: ReactNode }) {
     }
 
     return tempId;
-  }, [token, user, setActiveThreadId]);
+  }, [token, user]);
 
   const deleteThread = useCallback(
     async (id: string) => {
+      hydratedIdsRef.current.delete(id);
+      inflightIdsRef.current.delete(id);
       setThreadsState(prev => {
         const next = prev.filter(t => t.id !== id);
         if (activeThreadId === id && next.length > 0) {
           setActiveThreadId(next[0].id);
         } else if (activeThreadId === id) {
-          setActiveThreadId(null);
+          setActiveThreadIdState(null);
         }
         return next;
       });
@@ -152,40 +190,13 @@ export function ThreadProvider({ children }: { children: ReactNode }) {
     [activeThreadId, token, setActiveThreadId]
   );
 
-  const addMessage = useCallback(
-    async (threadId: string, msg: ThreadMessage) => {
-      setThreadsState(prev =>
-        prev.map(t =>
-          t.id === threadId ? { ...t, messages: [...t.messages, msg], updatedAt: Date.now() } : t
-        )
-      );
-
-      if (token) {
-        try {
-          await fetch(`${DB_BASE}/messages`, {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${token}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              id: msg.id,
-              thread_id: threadId,
-              role: msg.role,
-              content: msg.content,
-              reasoning: msg.reasoning,
-              tool_calls: msg.toolCalls,
-              status: msg.status,
-              error: msg.error,
-            }),
-          });
-        } catch (err) {
-          console.error('Error persisting message:', err);
-        }
-      }
-    },
-    [token]
-  );
+  const addMessage = useCallback(async (threadId: string, msg: ThreadMessage) => {
+    setThreadsState(prev =>
+      prev.map(t =>
+        t.id === threadId ? { ...t, messages: [...t.messages, msg], updatedAt: Date.now() } : t
+      )
+    );
+  }, []);
 
   const updateThreadTitle = useCallback(
     async (threadId: string, title: string) => {
@@ -209,45 +220,11 @@ export function ThreadProvider({ children }: { children: ReactNode }) {
     [token]
   );
 
-  const updateThreadMessages = useCallback(
-    (threadId: string, messages: ThreadMessage[]) => {
-      setThreadsState(prev =>
-        prev.map(t => (t.id === threadId ? { ...t, messages, updatedAt: Date.now() } : t))
-      );
-
-      // Note: We don't persist full message list updates for streaming here
-      // Individual message persistence is handled by addMessage or targeted updates
-      // In a real production app, we might want to debounced-sync the final state
-      if (token) {
-        const lastMsg = messages[messages.length - 1];
-        // Persist any terminal message — errored runs included, so a failed
-        // reply survives reload instead of silently vanishing (the DB's
-        // status CHECK already allows 'error').
-        if (lastMsg && (lastMsg.status === 'done' || lastMsg.status === 'error')) {
-          // Upsert the finalized message
-          fetch(`${DB_BASE}/messages`, {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${token}`,
-              'Content-Type': 'application/json',
-              Prefer: 'resolution=merge-duplicates',
-            },
-            body: JSON.stringify({
-              id: lastMsg.id,
-              thread_id: threadId,
-              role: lastMsg.role,
-              content: lastMsg.content,
-              reasoning: lastMsg.reasoning,
-              tool_calls: lastMsg.toolCalls,
-              status: lastMsg.status,
-              error: lastMsg.error,
-            }),
-          }).catch(e => console.error('Error upserting message:', e));
-        }
-      }
-    },
-    [token]
-  );
+  const updateThreadMessages = useCallback((threadId: string, messages: ThreadMessage[]) => {
+    setThreadsState(prev =>
+      prev.map(t => (t.id === threadId ? { ...t, messages, updatedAt: Date.now() } : t))
+    );
+  }, []);
 
   const sortedThreads = [...threads].sort((a, b) => b.updatedAt - a.updatedAt);
 
@@ -267,7 +244,7 @@ export function ThreadProvider({ children }: { children: ReactNode }) {
       {children}
       {!isLoaded && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
         </div>
       )}
     </ThreadContext.Provider>
