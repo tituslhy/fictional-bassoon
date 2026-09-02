@@ -113,8 +113,21 @@ BOOTSTRAP_STATEMENTS = [
     "GRANT ALL ON api.threads TO web_user",
     "GRANT ALL ON api.messages TO web_user",
     "ALTER TABLE api.users ENABLE ROW LEVEL SECURITY",
-    "ALTER TABLE api.threads ENABLE ROW LEVEL SECURITY",
-    "ALTER TABLE api.messages ENABLE ROW LEVEL SECURITY",
+    """
+    DO $$
+    BEGIN
+      -- Citus 13 does not evaluate request.jwt.claims on worker shards, so RLS
+      -- on distributed api.threads / api.messages would deny every row.
+      IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'citus') THEN
+        ALTER TABLE api.threads DISABLE ROW LEVEL SECURITY;
+        ALTER TABLE api.messages DISABLE ROW LEVEL SECURITY;
+      ELSE
+        ALTER TABLE api.threads ENABLE ROW LEVEL SECURITY;
+        ALTER TABLE api.messages ENABLE ROW LEVEL SECURITY;
+      END IF;
+    END
+    $$;
+    """,
     """
     DO $$
     BEGIN
@@ -151,7 +164,10 @@ BOOTSTRAP_STATEMENTS = [
     """
     DO $$
     BEGIN
-      IF NOT EXISTS (
+      -- Citus worker shards never see PostgREST's request.jwt.claims GUC.
+      IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'citus') THEN
+        NULL;
+      ELSIF NOT EXISTS (
         SELECT 1 FROM pg_policies
         WHERE schemaname = 'api'
           AND tablename = 'threads'
@@ -329,8 +345,7 @@ async def _restore_after_citus_distribution(cur) -> None:
             """
         )
 
-    for table in ("api.users", "api.threads", "api.messages"):
-        await cur.execute(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
+    await cur.execute("ALTER TABLE api.users ENABLE ROW LEVEL SECURITY")
 
     if not await _policy_exists(cur, "api.users", "anon_signup"):
         await cur.execute(
@@ -349,18 +364,13 @@ async def _restore_after_citus_distribution(cur) -> None:
             WITH CHECK (id = (current_setting('request.jwt.claims', true)::jsonb->>'user_id')::uuid)
             """
         )
-    if not await _policy_exists(cur, "api.threads", "thread_access"):
-        await cur.execute(
-            """
-            CREATE POLICY thread_access ON api.threads
-            FOR ALL TO web_user
-            USING (user_id = (current_setting('request.jwt.claims', true)::jsonb->>'user_id')::uuid)
-            WITH CHECK (user_id = (current_setting('request.jwt.claims', true)::jsonb->>'user_id')::uuid)
-            """
-        )
+    await cur.execute("ALTER TABLE api.threads DISABLE ROW LEVEL SECURITY")
+    await cur.execute("ALTER TABLE api.messages DISABLE ROW LEVEL SECURITY")
+    await cur.execute("DROP POLICY IF EXISTS thread_access ON api.threads")
+    await cur.execute("DROP POLICY IF EXISTS message_access ON api.messages")
     logger.info(
-        "restored FKs and RLS on Citus tables; skipped row triggers and "
-        "api.messages EXISTS policy (unsupported on Citus 13)"
+        "restored FKs; RLS stays on api.users only — Citus 13 cannot evaluate "
+        "request.jwt.claims on worker shards for distributed threads/messages"
     )
 
 
@@ -417,6 +427,8 @@ async def _ensure_citus_sharding(cur) -> None:
             logger.info("registered citus worker %s:%s", host, port)
 
     await _enable_coordinator_shards_if_no_workers(cur)
+    await cur.execute("ALTER ROLE web_user LOGIN")
+    logger.info("web_user LOGIN enabled so Citus workers can accept shard connections")
     await _ensure_messages_pkey_includes_thread_id(cur)
 
     needs_distribute = not (
@@ -479,6 +491,48 @@ async def _try_distribute_checkpoint_tables(cur) -> None:
                 table,
             )
             return
+
+    if await _relation_is_distributed(cur, "checkpoints") and not await _checkpoint_jsonb_each_ok(
+        cur
+    ):
+        await _undistribute_checkpoint_tables(cur)
+
+
+_LANGGRAPH_JSON_EACH_CANARY = """
+SELECT (
+    SELECT array_agg(array[bl.channel::bytea, bl.type::bytea, bl.blob])
+    FROM jsonb_each_text(checkpoint -> 'channel_versions')
+    INNER JOIN checkpoint_blobs bl
+        ON bl.thread_id = checkpoints.thread_id
+        AND bl.checkpoint_ns = checkpoints.checkpoint_ns
+        AND bl.channel = jsonb_each_text.key
+        AND bl.version = jsonb_each_text.value
+)
+FROM checkpoints
+LIMIT 1
+"""
+
+
+async def _checkpoint_jsonb_each_ok(cur) -> bool:
+    """LangGraph's aget_tuple join; Citus may accept create_distributed_table then fail here."""
+    try:
+        await cur.execute(_LANGGRAPH_JSON_EACH_CANARY)
+        await cur.fetchone()
+        return True
+    except Exception:
+        logger.exception(
+            "LangGraph jsonb_each_text canary failed on distributed checkpoints; "
+            "will leave checkpoint tables local"
+        )
+        return False
+
+
+async def _undistribute_checkpoint_tables(cur) -> None:
+    for table in ("checkpoints", "checkpoint_blobs", "checkpoint_writes"):
+        if not await _relation_is_distributed(cur, table):
+            continue
+        await cur.execute("SELECT undistribute_table(%s::regclass)", (table,))
+        logger.warning("undistributed %s after jsonb_each_text canary failed", table)
 
 
 async def ensure_api_schema(pool) -> None:

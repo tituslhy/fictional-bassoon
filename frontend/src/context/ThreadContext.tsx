@@ -77,7 +77,7 @@ export function ThreadProvider({ children }: { children: ReactNode }) {
     const fetchThreads = async () => {
       try {
         const res = await fetch(
-          `${DB_BASE}/threads?select=id,title,updated_at&order=updated_at.desc`,
+          `${DB_BASE}/threads?select=id,title,updated_at&user_id=eq.${user.id}&order=updated_at.desc`,
           {
             headers: {
               Authorization: `Bearer ${token}`,

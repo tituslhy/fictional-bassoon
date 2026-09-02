@@ -44,6 +44,8 @@ class FakeCursor:
             self.distributed.add("api.messages")
         elif "create_distributed_table" in self._last_sql and params:
             self.distributed.add(params[0])
+        if "undistribute_table" in self._last_sql and params:
+            self.distributed.discard(params[0])
         if self._last_sql.startswith("SELECT citus_add_node"):
             assert params is not None
             self.registered_workers.add((params[0], int(params[1])))
