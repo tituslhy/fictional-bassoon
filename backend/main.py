@@ -33,6 +33,7 @@ from src.worker.tasks import run_agent_task
 
 # Configure logging from INI file
 LOGGING_CONFIG_PATH = Path(__file__).parent / "logging.ini"
+Path("logs").mkdir(exist_ok=True)
 fileConfig(LOGGING_CONFIG_PATH, disable_existing_loggers=False)
 logger = logging.getLogger("backend")
 

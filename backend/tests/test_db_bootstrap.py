@@ -44,6 +44,8 @@ class FakeCursor:
             self.distributed.add("api.messages")
         elif "create_distributed_table" in self._last_sql and params:
             self.distributed.add(params[0])
+        if "undistribute_table" in self._last_sql and params:
+            self.distributed.discard(params[0])
         if self._last_sql.startswith("SELECT citus_add_node"):
             assert params is not None
             self.registered_workers.add((params[0], int(params[1])))
@@ -54,12 +56,16 @@ class FakeCursor:
         sql = self._last_sql
         if "pg_extension" in sql:
             return (self.citus,)
+        if "count(*)" in sql and "pg_dist_node" in sql:
+            return (len(self.registered_workers),)
         if "pg_dist_partition" in sql:
             rel = self.executed[-1][1][0] if self.executed[-1][1] else ""
             return (rel in self.distributed,)
         if "to_regclass" in sql:
             rel = self.executed[-1][1][0] if self.executed[-1][1] else ""
             return (rel in self.existing_relations,)
+        if "pg_constraint" in sql or "pg_policies" in sql:
+            return (False,)
         return None
 
     async def fetchall(self):
@@ -105,6 +111,11 @@ async def test_ensure_citus_sharding_registers_workers_and_distributes():
     assert any("create_reference_table('api.users')" in s for s in sqls)
     assert any("create_distributed_table('api.threads', 'id')" in s for s in sqls)
     assert any("create_distributed_table('api.messages', 'thread_id'" in s for s in sqls)
+    drop_idx = next(i for i, s in enumerate(sqls) if "DROP TRIGGER" in s)
+    ref_idx = next(i for i, s in enumerate(sqls) if "create_reference_table('api.users')" in s)
+    assert drop_idx < ref_idx
+    assert not any("shouldhaveshards" in s for s in sqls)
+    assert any("threads_user_id_fkey" in s and "ADD CONSTRAINT" in s for s in sqls)
     assert any(params == ("checkpoints",) for _, params in cur.executed if params)
     assert any(
         params == ("checkpoint_blobs", "checkpoints") for _, params in cur.executed if params
@@ -129,6 +140,7 @@ async def test_checkpoint_distribute_failure_is_swallowed():
         await _ensure_citus_sharding(cur)
     sqls = [sql for sql, _ in cur.executed]
     assert any("create_distributed_table('api.threads'" in s for s in sqls)
+    assert any("shouldhaveshards" in s for s in sqls)
     blob_attempts = [
         p
         for sql, p in cur.executed
@@ -159,3 +171,15 @@ async def test_ensure_api_schema_runs_statements_then_citus():
 
     assert any("CREATE TABLE IF NOT EXISTS api.users" in sql for sql, _ in cur.executed)
     assert any("pg_extension" in sql for sql, _ in cur.executed)
+
+
+@pytest.mark.asyncio
+async def test_already_distributed_tables_skip_blocker_drop():
+    cur = FakeCursor()
+    cur.distributed = {"api.users", "api.threads", "api.messages"}
+    with patch.dict("os.environ", {"CITUS_WORKER_NODES": "citus_worker_1:5432"}, clear=False):
+        await _ensure_citus_sharding(cur)
+    sqls = [sql for sql, _ in cur.executed]
+    assert not any("DROP TRIGGER" in s for s in sqls)
+    assert not any("create_reference_table" in s for s in sqls)
+    assert not any("ADD CONSTRAINT" in s for s in sqls)

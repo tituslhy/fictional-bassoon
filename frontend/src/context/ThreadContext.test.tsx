@@ -118,6 +118,18 @@ describe('ThreadContext', () => {
     });
 
     expect(result.current.threads[0].title).toBe('New Title');
+    const patchCall = vi.mocked(global.fetch).mock.calls.find(
+      ([url, init]) =>
+        typeof url === 'string' &&
+        url.includes(`/threads?id=eq.${threadId}`) &&
+        typeof init === 'object' &&
+        init !== null &&
+        (init as RequestInit).method === 'PATCH'
+    );
+    expect(patchCall).toBeDefined();
+    const body = JSON.parse(String((patchCall?.[1] as RequestInit).body));
+    expect(body.title).toBe('New Title');
+    expect(typeof body.updated_at).toBe('string');
   });
 
   it('should update thread messages (sync for streaming)', async () => {
