@@ -210,7 +210,7 @@ export function ThreadProvider({ children }: { children: ReactNode }) {
               Authorization: `Bearer ${token}`,
               'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ title }),
+            body: JSON.stringify({ title, updated_at: new Date().toISOString() }),
           });
         } catch (err) {
           console.error('Error updating thread title:', err);
