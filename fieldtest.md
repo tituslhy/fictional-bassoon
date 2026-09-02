@@ -13,8 +13,8 @@ with mocks; they are not a substitute for a live round-trip.
 A cloud agent bring-up (2026-09-02) cleared the pieces that do not need
 API keys. It could **not** run a live model round, and it could **not**
 run the full 45-container `make up` (nested Docker: no inter-container
-forwarding; RabbitMQ image died on vfs). Merge the Citus bootstrap fix
-first or FastAPI still dies on `create_reference_table('api.users')`.
+forwarding; RabbitMQ image died on vfs). The Citus bootstrap fix is on
+`main`; without it FastAPI dies on `create_reference_table('api.users')`.
 
 Still yours after `make up-build` with real keys:
 
