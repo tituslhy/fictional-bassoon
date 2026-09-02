@@ -108,8 +108,18 @@ BOOTSTRAP_STATEMENTS = [
     "GRANT USAGE ON SCHEMA api TO anon",
     "GRANT USAGE ON SCHEMA api TO web_user",
     "GRANT INSERT ON api.users TO anon",
-    "GRANT SELECT (id, email) ON api.users TO anon",
     "GRANT SELECT, UPDATE ON api.users TO web_user",
+    """
+    DO $$
+    BEGIN
+      GRANT SELECT (id, email) ON api.users TO anon;
+    EXCEPTION WHEN feature_not_supported THEN
+      -- Citus 13 rejects column-list GRANT on reference/distributed tables.
+      -- First-boot grant already applied before distribution.
+      NULL;
+    END
+    $$;
+    """,
     "GRANT ALL ON api.threads TO web_user",
     "GRANT ALL ON api.messages TO web_user",
     "ALTER TABLE api.users ENABLE ROW LEVEL SECURITY",
