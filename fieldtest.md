@@ -8,6 +8,43 @@ populated.
 These are **manual** checks. Automated unit tests cover the same seams
 with mocks; they are not a substitute for a live round-trip.
 
+## Still pending (laptop)
+
+A cloud agent bring-up (2026-09-02) cleared the pieces that do not need
+API keys. It could **not** run a live model round, and it could **not**
+run the full 45-container `make up` (nested Docker: no inter-container
+forwarding; RabbitMQ image died on vfs). Merge the Citus bootstrap fix
+first or FastAPI still dies on `create_reference_table('api.users')`.
+
+Still yours after `make up-build` with real keys:
+
+- **§1** live search turn: CUSTOM `name: a2ui` on `/chat`, distinct
+  reasoning / tool_call / markdown blocks, last CUSTOM has
+  `streaming: false`. Empty-state copy ("How can I help?", Relay chrome)
+  already checked.
+- **§2** hydrate of that turn: refresh paints **user + assistant + tool
+  cards** from `GET /threads/{id}/history`. User-turn-only history GET
+  and PostgREST catalog (no `messages(*)`) already checked.
+- **§3** blinking cursor only on the in-progress assistant bubble
+  (needs a second live stream on a thread that already has a completed
+  reply).
+- **§5** checkpoint row from a **successful** chat. Workers +
+  `pg_dist_partition` (`api.users` reference, `api.threads` /
+  `api.messages` distributed) already checked; LangGraph checkpoints
+  stayed local after the `jsonb_each_text` canary — confirm a live turn
+  still writes a `checkpoints` row.
+- **§6** GitHub file view paints the root README mermaid (source has no
+  known breakers; the rendered GitHub glance was not clicked).
+- **Full compose** — nginx `:80`, RabbitMQ broker, Langfuse / ClickHouse /
+  MinIO, LGTM. Cloud used coordinator + 2 workers + Redis + PostgREST +
+  FastAPI + Celery + Next.js only.
+
+Already passed in that bring-up (do not re-prove unless you want to):
+
+- **§4** idle timeout — SSE `RUN_ERROR` `Worker idle timeout: no events
+  for 120s` at ~120s with the worker stopped; composer unlocked after a
+  401 as well.
+
 ## 0. Bring the stack up
 
 ```bash
@@ -146,11 +183,12 @@ picture. Do not "fix" by deleting services from the diagram.
 
 ## Sign-off
 
-Tick on your laptop, not in CI:
+Tick on your laptop, not in CI. `(cloud)` means the 2026-09-02 bring-up
+already saw it; still re-tick if you want it on your machine.
 
-- [ ] §1 UI blocks + CUSTOM `name: a2ui` on `/chat`
-- [ ] §2 hydrate from `GET /threads/{id}/history` after refresh
-- [ ] §3 cursor only on the in-progress assistant bubble
-- [ ] §4 idle timeout (or skipped, with a note)
-- [ ] §5 Citus workers + `pg_dist_partition`
-- [ ] §6 mermaid renders
+- [ ] §1 UI blocks + CUSTOM `name: a2ui` on `/chat` — **pending** (needs keys)
+- [ ] §2 hydrate assistant + tool cards after refresh — **pending** (user-turn GET 200 in cloud)
+- [ ] §3 cursor only on the in-progress assistant bubble — **pending**
+- [x] §4 idle timeout — **passed in cloud** (re-tick on laptop if you kill a worker)
+- [ ] §5 Citus workers + `pg_dist_partition` — workers + API tables **passed in cloud**; live checkpoint write still **pending**
+- [ ] §6 mermaid renders on GitHub — **pending** (source inspected only)
