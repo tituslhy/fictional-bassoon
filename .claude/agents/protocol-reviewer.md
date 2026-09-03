@@ -21,8 +21,8 @@ When invoked:
    - `citus-thread-id-integrity.md` — no new ID system bypassing `thread_id`.
    - `container-budget.md` — no new container without written justification.
    - `deep-agent-scope-lock.md` — no scope creep into `src/agent.py`.
-   - `legacy-stack-freeze.md` — no incidental edits to Celery/Citus/ClickHouse/
-     Redis/monitoring config.
+   - `legacy-stack-freeze.md` — no incidental edits to Celery/Postgres
+     init/RabbitMQ/monitoring config.
    - `sse-transport-lock.md` — SSE transport preserved, no silent WS swap.
    - `protocol-version-pinning.md` — versions pinned and cited, not assumed.
 3. Independently verify the definition-of-done — don't trust a reported

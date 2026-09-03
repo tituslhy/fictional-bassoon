@@ -38,9 +38,8 @@ run_agent_task → run_agent_and_stream() (async)
 - src/worker/worker_runner.py — async agent execution, publishes to Redis
 - src/queue/redis_pubsub.py — publish_event() and subscribe() helpers only
 - src/db.py — global asyncpg connection pool (get_db_pool / close_db_pool)
-- src/db_bootstrap.py — schema bootstrap (tables, roles, RLS, Citus
-  worker registration and create_distributed_table), run on FastAPI
-  startup via the lifespan handler
+- src/db_bootstrap.py — schema bootstrap (tables, roles, RLS), run on
+  FastAPI startup via the lifespan handler
 
 ## Hard rules
 

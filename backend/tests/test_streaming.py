@@ -349,6 +349,37 @@ async def test_empty_reasoning_block_is_skipped():
     assert "TEXT_MESSAGE_CONTENT" in _without_custom(events)
 
 
+@pytest.mark.asyncio
+async def test_stream_agent_events_config_is_langsmith_metadata_not_langfuse():
+    request = MagicMock()
+    request.thread_id = "thread-ls"
+    request.job_id = "job-ls"
+    request.message = "hi"
+
+    captured: dict = {}
+
+    async def mock_astream(*args, **kwargs):
+        captured["config"] = kwargs.get("config") or (args[1] if len(args) > 1 else None)
+        if False:
+            yield None
+
+    agent = MagicMock()
+    agent.astream = mock_astream
+
+    events = [event async for event in stream_agent_events(agent, request)]
+    assert events[0]["event"] == "RUN_STARTED"
+    assert events[-1]["event"] == "RUN_FINISHED"
+
+    config = captured["config"]
+    assert config["run_name"] == "deep_agent_chat"
+    assert config["configurable"]["thread_id"] == "thread-ls"
+    assert config["metadata"]["thread_id"] == "thread-ls"
+    assert config["metadata"]["job_id"] == "job-ls"
+    assert config["metadata"]["session_id"] == "thread-ls"
+    assert "callbacks" not in config
+    assert "langfuse_session_id" not in config["metadata"]
+
+
 def test_a2ui_helpers_cover_edge_branches():
     state = _RunState()
     _append_a2ui_tool_args(state, "missing", "{}")

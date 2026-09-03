@@ -15,7 +15,7 @@ const STARTER_PROMPTS = [
   {
     icon: Search,
     title: 'Search the web',
-    prompt: "What's the latest news about Citus sharding? Search for it.",
+    prompt: "What's the latest news about LangGraph checkpointing? Search for it.",
   },
   {
     icon: Compass,
@@ -30,7 +30,7 @@ const STARTER_PROMPTS = [
   {
     icon: Scale,
     title: 'Compare options',
-    prompt: 'Compare Redis Sentinel vs a single Redis instance for a chat app.',
+    prompt: 'Compare Redis pub/sub vs polling for a streaming chat app.',
   },
 ] as const;
 

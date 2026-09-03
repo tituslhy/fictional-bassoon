@@ -4,7 +4,7 @@ High-performance, full-stack AI chat application designed to stream real-time ag
 
 ## Overview
 
-This project is a showcase of distributed systems engineering applied to AI agents. It streams real-time agent reasoning, tool calls, tool results, and final answers to the browser via **Server-Sent Events (SSE)**, speaking the **[AG-UI protocol](https://docs.ag-ui.com/)** event vocabulary end-to-end. The architecture offloads heavy "Deep Agent" workloads to asynchronous workers, persists conversation state in a PostgreSQL/Citus cluster, and provides complete observability and LLM tracing across the entire stack.
+This project is a showcase of distributed systems engineering applied to AI agents. It streams real-time agent reasoning, tool calls, tool results, and final answers to the browser via **Server-Sent Events (SSE)**, speaking the **[AG-UI protocol](https://docs.ag-ui.com/)** event vocabulary end-to-end. The architecture offloads heavy "Deep Agent" workloads to asynchronous workers, persists conversation state in a single PostgreSQL instance behind PgBouncer, and traces LLM runs with LangSmith.
 
 The app is built on three open agent protocols (all version-pinned — see `.claude/rules/protocol-version-pinning.md`):
 
@@ -24,7 +24,6 @@ graph LR
     classDef postgres fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
     classDef redis fill:#dcfce7,stroke:#16a34a,color:#14532d
     classDef observability fill:#fef3c7,stroke:#d97706,color:#78350f
-    classDef clickhouse fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
     classDef monitoring fill:#ede9fe,stroke:#7c3aed,color:#3b0764
     classDef external fill:#f1f5f9,stroke:#64748b,color:#0f172a
 
@@ -54,41 +53,22 @@ graph LR
         Tavily[Tavily Search API]
     end
 
-    subgraph Observability [Langfuse Suite]
-        Langfuse[Langfuse Web Worker]
-        Minio[Minio Object Store]
-        LangfuseRedis[Langfuse Redis Cache]
-    end
-
-    subgraph ClickhouseCluster [ClickHouse Cluster]
-        CH01[CH-01 Node]
-        CH02[CH-02 Node]
-        CH03[CH-03 Node]
-        CKP1[Keeper 01]
-        CKP2[Keeper 02]
-        CKP3[Keeper 03]
+    subgraph Observability [LangSmith]
+        LangSmith[LangSmith Cloud]
     end
 
     subgraph BrokerBox [Message Broker]
-        Broker[RabbitMQ Broker]
+        Broker[RabbitMQ]
     end
 
-    subgraph RedisCluster [Redis Sentinel Cluster]
-        RedisPrimary[App Redis Primary]
-        RedisR1[Replica 1]
-        RedisR2[Replica 2]
-        Sentinel1[Sentinel 1]
-        Sentinel2[Sentinel 2]
-        Sentinel3[Sentinel 3]
+    subgraph RedisBox [Redis]
         PubSub[Redis Pub-Sub]
     end
 
-    subgraph PostgresCluster [Postgres Cluster]
-        PgB[PgBouncer Pool]
+    subgraph PostgresBox [Postgres]
+        PgB[PgBouncer]
         PGRST[PostgREST]
-        CitusC[Citus Coordinator]
-        CW1[Citus Worker 1]
-        CW2[Citus Worker 2]
+        PG[PostgreSQL 16]
     end
 
     subgraph Monitoring [LGTM Stack]
@@ -115,24 +95,10 @@ graph LR
     Agent --> PgB
     PGRST --> PgB
     AuthAPI --> PgB
-    PgB --> CitusC
-    CitusC --> CW1
-    CitusC --> CW2
+    PgB --> PG
     Agent --> PubSub
     PubSub --> API
-    Agent --> Langfuse
-    Langfuse --> Minio
-    Langfuse --> CH01
-    CH01 --- CH02
-    CH02 --- CH03
-    CKP1 --- CKP2
-    CKP2 --- CKP3
-    Langfuse --> LangfuseRedis
-    LangfuseRedis -.-> RedisPrimary
-    RedisPrimary --> RedisR1
-    RedisPrimary --> RedisR2
-    Sentinel1 --- Sentinel2
-    Sentinel2 --- Sentinel3
+    Agent -.-> LangSmith
     Worker -.-> Prom
     API -.-> Prom
     Alloy -.-> Loki
@@ -142,14 +108,11 @@ graph LR
 
     class UI,NG browser
     class SSE,Auth frontend
-    class API,AuthAPI,A2A,Worker,Agent backend
-    class A2AClient,Tavily external
-    class PgB,PGRST,CitusC,CW1,CW2 postgres
-    class RedisPrimary,RedisR1,RedisR2,Sentinel1,Sentinel2,Sentinel3,PubSub redis
-    class Langfuse,Minio,LangfuseRedis observability
-    class CH01,CH02,CH03,CKP1,CKP2,CKP3 clickhouse
+    class API,AuthAPI,A2A,Worker,Agent,Broker backend
+    class A2AClient,Tavily,LangSmith external
+    class PgB,PGRST,PG postgres
+    class PubSub redis
     class Alloy,Loki,Prom,Tempo,Grafana monitoring
-    class Broker backend
 
     style Client fill:#f3f4f6,stroke:#888
     style Peers fill:#f8fafc,stroke:#64748b
@@ -158,10 +121,9 @@ graph LR
     style Backend fill:#ecfdf5,stroke:#059669
     style Tools fill:#f8fafc,stroke:#64748b
     style BrokerBox fill:#ecfdf5,stroke:#059669
-    style RedisCluster fill:#f0fdf4,stroke:#16a34a
-    style PostgresCluster fill:#eff6ff,stroke:#2563eb
+    style RedisBox fill:#f0fdf4,stroke:#16a34a
+    style PostgresBox fill:#eff6ff,stroke:#2563eb
     style Observability fill:#fffbeb,stroke:#d97706
-    style ClickhouseCluster fill:#fef2f2,stroke:#dc2626
     style Monitoring fill:#f5f3ff,stroke:#7c3aed
 ```
 
@@ -210,17 +172,17 @@ The same pipeline is reachable by other agents over **A2A**: a JSON-RPC `SendMes
 - **PostgREST for Automated CRUD**
   Exposes the Postgres database directly as a REST API for standard data operations (user profiles, message history), removing the need for boilerplate FastAPI CRUD endpoints.
 
-- **Redis Sentinel for High Availability**
-  Ensures resilient pub/sub event streaming and caching for distributed components.
+- **Single Redis for pub/sub**
+  One Redis container carries the `stream:{job_id}` channel between the Celery worker and FastAPI. Sentinel / replica HA was unused by the app path and added six extra containers plus exporters.
 
-- **Dual PgBouncer Pools (Transaction + Session)**
-  Optimizes database connectivity by separating short-lived API queries from long-lived agent state connections.
+- **PgBouncer in front of one Postgres**
+  FastAPI, Celery, and PostgREST all connect through transaction-mode PgBouncer on `:6432`. PostgREST's contract is unchanged (`api` schema, `anon` / `web_user` / `authenticator`, JWT).
 
-- **Citus sharded by `thread_id`**
-  Coordinator + 2 workers. FastAPI startup registers the workers (`citus_add_node`) and distributes `api.threads` by `id`, `api.messages` by `thread_id` (colocated), and `api.users` as a reference table. LangGraph checkpoint tables are distributed by `thread_id` too; if Citus still rejects LangGraph's `jsonb_each_text` subquery they stay local on the coordinator (see `.claude/rules/citus-thread-id-integrity.md`).
+- **`thread_id` is the one session key**
+  `api.threads.id`, LangGraph checkpoints, AG-UI run IDs, and A2A `contextId` all resolve to the same `thread_id`. No Citus distribution — see `.claude/rules/citus-thread-id-integrity.md`.
 
-- **Langfuse Observability & Clickhouse**
-  Provides deep tracing of agent trajectories, token usage analysis, and detailed execution logs for production debugging. Langfuse utilizes Redis/Valkey for asynchronous event queuing (via BullMQ), API key validation, and prompt caching.
+- **LangSmith for LLM traces**
+  LangGraph emits traces to LangSmith when `LANGSMITH_API_KEY` + `LANGSMITH_TRACING=true` are set. No local Langfuse / ClickHouse / MinIO cluster.
 
 - **LGTM Stack for Infrastructure Monitoring**
   Full integration of Loki (logs), Grafana (dashboards), Tempo (tracing), and Prometheus (metrics) across all distributed boundaries.
@@ -235,7 +197,7 @@ fictional-bassoon/
 ├── backend/                    # FastAPI Backend
 │   ├── main.py                 # API Entry Point (/chat, /auth)
 │   ├── src/                    # Logic, Models, & Auth
-│   ├── docker/                 # Monitoring, Citus & Redis config
+│   ├── docker/                 # Postgres init, RabbitMQ plugins, LGTM config
 │   └── docker-compose.yaml     # Backend-specific Stack
 └── frontend/                   # Next.js Frontend
     ├── src/                    # UI Components & Context
@@ -328,8 +290,8 @@ Consolidated access through Nginx and direct ports:
 |---|---|---|---|
 | **Chat UI** | [http://localhost](http://localhost) | [http://localhost:3000](http://localhost:3000) | Main Application |
 | **API Docs** | [http://localhost/api/docs](http://localhost/api/docs) | [http://localhost:8000/docs](http://localhost:8000/docs) | API Reference |
-| **Langfuse** | - | [http://localhost:3030](http://localhost:3030) | LLM Tracing & Observability |
+| **LangSmith** | - | [https://smith.langchain.com](https://smith.langchain.com) | LLM Tracing |
 | **PostgREST** | [http://localhost/api/db](http://localhost/api/db) | [http://localhost:3002](http://localhost:3002) | Data Explorer |
 | **Grafana** | - | [http://localhost:3001](http://localhost:3001) | Dashboards & Logs |
 | **Prometheus** | - | [http://localhost:9090](http://localhost:9090) | Metrics |
-| **Redis Insight** | - | [http://localhost:5540](http://localhost:5540) | Redis GUI |
+| **RabbitMQ** | - | [http://localhost:15672](http://localhost:15672) | Broker management UI |

@@ -19,7 +19,7 @@ When invoked:
    - `citus-thread-id-integrity.mdc` — no new ID system bypassing `thread_id`.
    - `container-budget.mdc` — no new container without written justification.
    - `deep-agent-scope-lock.mdc` — no scope creep into `src/agent.py`.
-   - `legacy-stack-freeze.mdc` — no incidental edits to Celery/Citus/ClickHouse/
+   - `legacy-stack-freeze.mdc` — no incidental edits to Celery/Postgres init/RabbitMQ/
      Redis/monitoring config.
    - `sse-transport-lock.mdc` — SSE transport preserved, no silent WS swap.
    - `protocol-version-pinning.mdc` — versions pinned and cited, not assumed.

@@ -56,7 +56,7 @@ describe('MessageList', () => {
 
     fireEvent.click(screen.getByText('Search the web'));
     expect(onPrompt).toHaveBeenCalledWith(
-      "What's the latest news about Citus sharding? Search for it."
+      "What's the latest news about LangGraph checkpointing? Search for it."
     );
   });
 

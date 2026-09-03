@@ -1,5 +1,4 @@
 import logging
-import os
 
 logger = logging.getLogger("backend")
 
@@ -52,10 +51,7 @@ BOOTSTRAP_STATEMENTS = [
     """
     DO $$
     BEGIN
-      -- Citus 13 rejects row triggers on reference/distributed tables.
-      IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'citus') THEN
-        NULL;
-      ELSIF NOT EXISTS (
+      IF NOT EXISTS (
         SELECT 1
         FROM pg_trigger
         WHERE tgname = 'update_users_updated_at'
@@ -72,9 +68,7 @@ BOOTSTRAP_STATEMENTS = [
     """
     DO $$
     BEGIN
-      IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'citus') THEN
-        NULL;
-      ELSIF NOT EXISTS (
+      IF NOT EXISTS (
         SELECT 1
         FROM pg_trigger
         WHERE tgname = 'update_threads_updated_at'
@@ -109,35 +103,12 @@ BOOTSTRAP_STATEMENTS = [
     "GRANT USAGE ON SCHEMA api TO web_user",
     "GRANT INSERT ON api.users TO anon",
     "GRANT SELECT, UPDATE ON api.users TO web_user",
-    """
-    DO $$
-    BEGIN
-      GRANT SELECT (id, email) ON api.users TO anon;
-    EXCEPTION WHEN feature_not_supported THEN
-      -- Citus 13 rejects column-list GRANT on reference/distributed tables.
-      -- First-boot grant already applied before distribution.
-      NULL;
-    END
-    $$;
-    """,
+    "GRANT SELECT (id, email) ON api.users TO anon",
     "GRANT ALL ON api.threads TO web_user",
     "GRANT ALL ON api.messages TO web_user",
     "ALTER TABLE api.users ENABLE ROW LEVEL SECURITY",
-    """
-    DO $$
-    BEGIN
-      -- Citus 13 does not evaluate request.jwt.claims on worker shards, so RLS
-      -- on distributed api.threads / api.messages would deny every row.
-      IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'citus') THEN
-        ALTER TABLE api.threads DISABLE ROW LEVEL SECURITY;
-        ALTER TABLE api.messages DISABLE ROW LEVEL SECURITY;
-      ELSE
-        ALTER TABLE api.threads ENABLE ROW LEVEL SECURITY;
-        ALTER TABLE api.messages ENABLE ROW LEVEL SECURITY;
-      END IF;
-    END
-    $$;
-    """,
+    "ALTER TABLE api.threads ENABLE ROW LEVEL SECURITY",
+    "ALTER TABLE api.messages ENABLE ROW LEVEL SECURITY",
     """
     DO $$
     BEGIN
@@ -174,10 +145,7 @@ BOOTSTRAP_STATEMENTS = [
     """
     DO $$
     BEGIN
-      -- Citus worker shards never see PostgREST's request.jwt.claims GUC.
-      IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'citus') THEN
-        NULL;
-      ELSIF NOT EXISTS (
+      IF NOT EXISTS (
         SELECT 1 FROM pg_policies
         WHERE schemaname = 'api'
           AND tablename = 'threads'
@@ -194,11 +162,7 @@ BOOTSTRAP_STATEMENTS = [
     """
     DO $$
     BEGIN
-      -- Citus 13 rejects this EXISTS/SubLink policy on distributed api.messages.
-      -- api.messages is unused by PostgREST (history hydrates from the checkpointer).
-      IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'citus') THEN
-        NULL;
-      ELSIF NOT EXISTS (
+      IF NOT EXISTS (
         SELECT 1 FROM pg_policies
         WHERE schemaname = 'api'
           AND tablename = 'messages'
@@ -227,328 +191,10 @@ BOOTSTRAP_STATEMENTS = [
 ]
 
 
-def parse_citus_worker_nodes(raw: str) -> list[tuple[str, int]]:
-    """Parse ``host:port,host:port`` from ``CITUS_WORKER_NODES``."""
-    nodes: list[tuple[str, int]] = []
-    for part in raw.split(","):
-        part = part.strip()
-        if not part:
-            continue
-        host, port_s = part.rsplit(":", 1)
-        nodes.append((host.strip(), int(port_s)))
-    return nodes
-
-
-async def _extension_present(cur, name: str) -> bool:
-    await cur.execute("SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = %s)", (name,))
-    row = await cur.fetchone()
-    return bool(row and row[0])
-
-
-async def _relation_is_distributed(cur, qualified: str) -> bool:
-    await cur.execute(
-        "SELECT EXISTS (SELECT 1 FROM pg_dist_partition WHERE logicalrelid = %s::regclass)",
-        (qualified,),
-    )
-    row = await cur.fetchone()
-    return bool(row and row[0])
-
-
-async def _relation_exists(cur, qualified: str) -> bool:
-    await cur.execute("SELECT to_regclass(%s) IS NOT NULL", (qualified,))
-    row = await cur.fetchone()
-    return bool(row and row[0])
-
-
-async def _messages_primary_key_columns(cur) -> list[str]:
-    await cur.execute(
-        """
-        SELECT a.attname
-        FROM pg_index i
-        JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
-        WHERE i.indrelid = 'api.messages'::regclass
-          AND i.indisprimary
-        ORDER BY array_position(i.indkey, a.attnum)
-        """
-    )
-    rows = await cur.fetchall()
-    return [r[0] for r in rows]
-
-
-async def _ensure_messages_pkey_includes_thread_id(cur) -> None:
-    """Citus unique/PK constraints must include the distribution column."""
-    cols = await _messages_primary_key_columns(cur)
-    if cols == ["thread_id", "id"]:
-        return
-    if cols == ["id"]:
-        await cur.execute("ALTER TABLE api.messages DROP CONSTRAINT messages_pkey")
-        await cur.execute("ALTER TABLE api.messages ADD PRIMARY KEY (thread_id, id)")
-        logger.info("migrated api.messages primary key to (thread_id, id) for Citus")
-        return
-    if cols:
-        logger.warning("api.messages primary key columns %s; not migrating automatically", cols)
-
-
-async def _constraint_exists(cur, table: str, name: str) -> bool:
-    await cur.execute(
-        """
-        SELECT EXISTS (
-          SELECT 1 FROM pg_constraint
-          WHERE conname = %s AND conrelid = %s::regclass
-        )
-        """,
-        (name, table),
-    )
-    row = await cur.fetchone()
-    return bool(row and row[0])
-
-
-async def _policy_exists(cur, table: str, name: str) -> bool:
-    schema, _, rel = table.partition(".")
-    await cur.execute(
-        """
-        SELECT EXISTS (
-          SELECT 1 FROM pg_policies
-          WHERE schemaname = %s AND tablename = %s AND policyname = %s
-        )
-        """,
-        (schema, rel, name),
-    )
-    row = await cur.fetchone()
-    return bool(row and row[0])
-
-
-async def _drop_citus_distribution_blockers(cur) -> None:
-    """Citus 13 cannot convert tables that still have triggers, RLS policies, or FKs."""
-    await cur.execute("DROP TRIGGER IF EXISTS update_users_updated_at ON api.users")
-    await cur.execute("DROP TRIGGER IF EXISTS update_threads_updated_at ON api.threads")
-    for table, policy in (
-        ("api.users", "anon_signup"),
-        ("api.users", "user_self_manage"),
-        ("api.threads", "thread_access"),
-        ("api.messages", "message_access"),
-    ):
-        await cur.execute(f"DROP POLICY IF EXISTS {policy} ON {table}")
-    for table in ("api.users", "api.threads", "api.messages"):
-        await cur.execute(f"ALTER TABLE {table} DISABLE ROW LEVEL SECURITY")
-    await cur.execute("ALTER TABLE api.messages DROP CONSTRAINT IF EXISTS messages_thread_id_fkey")
-    await cur.execute("ALTER TABLE api.threads DROP CONSTRAINT IF EXISTS threads_user_id_fkey")
-    logger.info("dropped triggers, RLS policies, and FKs that block Citus distribution")
-
-
-async def _restore_after_citus_distribution(cur) -> None:
-    """Re-apply FKs and Citus-safe RLS. Row triggers are not supported on Citus tables."""
-    if not await _constraint_exists(cur, "api.threads", "threads_user_id_fkey"):
-        await cur.execute(
-            """
-            ALTER TABLE api.threads
-            ADD CONSTRAINT threads_user_id_fkey
-            FOREIGN KEY (user_id) REFERENCES api.users(id) ON DELETE CASCADE
-            """
-        )
-    if not await _constraint_exists(cur, "api.messages", "messages_thread_id_fkey"):
-        await cur.execute(
-            """
-            ALTER TABLE api.messages
-            ADD CONSTRAINT messages_thread_id_fkey
-            FOREIGN KEY (thread_id) REFERENCES api.threads(id) ON DELETE CASCADE
-            """
-        )
-
-    await cur.execute("ALTER TABLE api.users ENABLE ROW LEVEL SECURITY")
-
-    if not await _policy_exists(cur, "api.users", "anon_signup"):
-        await cur.execute(
-            """
-            CREATE POLICY anon_signup ON api.users
-            FOR INSERT TO anon
-            WITH CHECK (true)
-            """
-        )
-    if not await _policy_exists(cur, "api.users", "user_self_manage"):
-        await cur.execute(
-            """
-            CREATE POLICY user_self_manage ON api.users
-            FOR ALL TO web_user
-            USING (id = (current_setting('request.jwt.claims', true)::jsonb->>'user_id')::uuid)
-            WITH CHECK (id = (current_setting('request.jwt.claims', true)::jsonb->>'user_id')::uuid)
-            """
-        )
-    await cur.execute("ALTER TABLE api.threads DISABLE ROW LEVEL SECURITY")
-    await cur.execute("ALTER TABLE api.messages DISABLE ROW LEVEL SECURITY")
-    await cur.execute("DROP POLICY IF EXISTS thread_access ON api.threads")
-    await cur.execute("DROP POLICY IF EXISTS message_access ON api.messages")
-    logger.info(
-        "restored FKs; RLS stays on api.users only — Citus 13 cannot evaluate "
-        "request.jwt.claims on worker shards for distributed threads/messages"
-    )
-
-
-async def _enable_coordinator_shards_if_no_workers(cur) -> None:
-    """Distributed tables need at least one shard-host; the coordinator can be one."""
-    await cur.execute("SELECT count(*) FROM pg_dist_node WHERE groupid <> 0")
-    row = await cur.fetchone()
-    worker_count = int(row[0]) if row else 0
-    if worker_count:
-        return
-    await cur.execute("UPDATE pg_dist_node SET shouldhaveshards = true WHERE groupid = 0")
-    logger.info("no citus workers; enabling shards on the coordinator")
-
-
-async def _ensure_citus_sharding(cur) -> None:
-    """Register workers and distribute tables. No-op without the Citus extension.
-
-    ``api.users`` is a reference table (replicated) so ``api.threads.user_id``
-    can keep its FK. ``api.threads`` is distributed by ``id`` (the thread_id
-    shard key); ``api.messages`` is colocated on ``thread_id``.
-
-    Citus 13.0 cannot convert tables that still have row triggers, RLS
-    policies, or FKs (init.sql installs all three). Those are dropped,
-    tables are distributed, then FKs and Citus-safe policies are restored.
-    Row triggers and the ``message_access`` EXISTS policy are not restored —
-    Citus rejects them on distributed/reference tables.
-
-    LangGraph checkpoint tables are distributed by ``thread_id`` and colocated
-    with each other. That re-enables the historical Citus/``jsonb_each_text``
-    risk; a failure here is logged and those tables stay local rather than
-    taking down API schema bootstrap.
-    """
-    if not await _extension_present(cur, "citus"):
-        logger.info("citus extension not present; skipping cluster setup")
-        return
-
-    coordinator_host = os.getenv("CITUS_COORDINATOR_HOST", "citus_coordinator")
-    coordinator_port = int(os.getenv("CITUS_COORDINATOR_PORT", "5432"))
-    await cur.execute(
-        "SELECT citus_set_coordinator_host(%s, %s)",
-        (coordinator_host, coordinator_port),
-    )
-
-    workers = parse_citus_worker_nodes(os.getenv("CITUS_WORKER_NODES", ""))
-    if not workers:
-        logger.info("CITUS_WORKER_NODES unset; not registering workers")
-    else:
-        await cur.execute("SELECT nodename, nodeport FROM pg_dist_node WHERE groupid <> 0")
-        existing = {(row[0], int(row[1])) for row in await cur.fetchall()}
-        for host, port in workers:
-            if (host, port) in existing:
-                continue
-            await cur.execute("SELECT citus_add_node(%s, %s)", (host, port))
-            logger.info("registered citus worker %s:%s", host, port)
-
-    await _enable_coordinator_shards_if_no_workers(cur)
-    await cur.execute("ALTER ROLE web_user LOGIN")
-    logger.info("web_user LOGIN enabled so Citus workers can accept shard connections")
-    await _ensure_messages_pkey_includes_thread_id(cur)
-
-    needs_distribute = not (
-        await _relation_is_distributed(cur, "api.users")
-        and await _relation_is_distributed(cur, "api.threads")
-        and await _relation_is_distributed(cur, "api.messages")
-    )
-    if needs_distribute:
-        await _drop_citus_distribution_blockers(cur)
-
-    if not await _relation_is_distributed(cur, "api.users"):
-        await cur.execute("SELECT create_reference_table('api.users')")
-        logger.info("created citus reference table api.users")
-
-    if not await _relation_is_distributed(cur, "api.threads"):
-        await cur.execute("SELECT create_distributed_table('api.threads', 'id')")
-        logger.info("distributed api.threads by id")
-
-    if not await _relation_is_distributed(cur, "api.messages"):
-        await cur.execute(
-            "SELECT create_distributed_table('api.messages', 'thread_id', colocate_with => 'api.threads')"
-        )
-        logger.info("distributed api.messages by thread_id (colocated with api.threads)")
-
-    if needs_distribute:
-        await _restore_after_citus_distribution(cur)
-
-    await _try_distribute_checkpoint_tables(cur)
-
-
-async def _try_distribute_checkpoint_tables(cur) -> None:
-    """Colocate LangGraph checkpoint tables on thread_id; keep them local on error."""
-    checkpoint_tables = (
-        ("checkpoints", "none"),
-        ("checkpoint_blobs", "checkpoints"),
-        ("checkpoint_writes", "checkpoints"),
-    )
-    for table, colocate_with in checkpoint_tables:
-        if not await _relation_exists(cur, table):
-            logger.info("%s not present; skipping citus distribution", table)
-            return
-        if await _relation_is_distributed(cur, table):
-            continue
-        try:
-            if colocate_with == "none":
-                await cur.execute(
-                    "SELECT create_distributed_table(%s, 'thread_id', colocate_with => 'none')",
-                    (table,),
-                )
-            else:
-                await cur.execute(
-                    "SELECT create_distributed_table(%s, 'thread_id', colocate_with => %s)",
-                    (table, colocate_with),
-                )
-            logger.info("distributed %s by thread_id", table)
-        except Exception:
-            logger.exception(
-                "failed to distribute %s (likely Citus/LangGraph jsonb_each_text); "
-                "leaving remaining checkpoint tables local on the coordinator",
-                table,
-            )
-            return
-
-    if await _relation_is_distributed(cur, "checkpoints") and not await _checkpoint_jsonb_each_ok(
-        cur
-    ):
-        await _undistribute_checkpoint_tables(cur)
-
-
-_LANGGRAPH_JSON_EACH_CANARY = """
-SELECT (
-    SELECT array_agg(array[bl.channel::bytea, bl.type::bytea, bl.blob])
-    FROM jsonb_each_text(checkpoint -> 'channel_versions')
-    INNER JOIN checkpoint_blobs bl
-        ON bl.thread_id = checkpoints.thread_id
-        AND bl.checkpoint_ns = checkpoints.checkpoint_ns
-        AND bl.channel = jsonb_each_text.key
-        AND bl.version = jsonb_each_text.value
-)
-FROM checkpoints
-LIMIT 1
-"""
-
-
-async def _checkpoint_jsonb_each_ok(cur) -> bool:
-    """LangGraph's aget_tuple join; Citus may accept create_distributed_table then fail here."""
-    try:
-        await cur.execute(_LANGGRAPH_JSON_EACH_CANARY)
-        await cur.fetchone()
-        return True
-    except Exception:
-        logger.exception(
-            "LangGraph jsonb_each_text canary failed on distributed checkpoints; "
-            "will leave checkpoint tables local"
-        )
-        return False
-
-
-async def _undistribute_checkpoint_tables(cur) -> None:
-    for table in ("checkpoints", "checkpoint_blobs", "checkpoint_writes"):
-        if not await _relation_is_distributed(cur, table):
-            continue
-        await cur.execute("SELECT undistribute_table(%s::regclass)", (table,))
-        logger.warning("undistributed %s after jsonb_each_text canary failed", table)
-
-
 async def ensure_api_schema(pool) -> None:
+    """Create the PostgREST `api` schema, roles, grants, and RLS policies."""
     async with pool.connection() as conn:
         async with conn.cursor() as cur:
             for statement in BOOTSTRAP_STATEMENTS:
                 await cur.execute(statement)
-            await _ensure_citus_sharding(cur)
     logger.info("ensured api schema bootstrap")

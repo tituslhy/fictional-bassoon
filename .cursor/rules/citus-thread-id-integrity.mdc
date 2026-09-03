@@ -1,49 +1,35 @@
 ---
-description: AG-UI/A2A IDs must resolve to the existing thread_id; Citus shards api.threads/messages by thread_id at bootstrap.
-globs: backend/docker/citus/init.sql, backend/src/db_bootstrap.py, backend/src/models/chat_models.py, backend/src/protocol/**
-alwaysApply: false
+description: AG-UI/A2A IDs must resolve to the existing thread_id; Postgres is a single node.
+globs: backend/docker/postgres/init.sql, backend/src/db_bootstrap.py, backend/src/models/chat_models.py, backend/src/protocol/**
 ---
 
-# Citus / thread_id Integrity
+# thread_id Integrity
 
-## Context — read this before assuming anything about sharding
+## Context
 
-Citus **is** clustered at runtime: FastAPI startup (`backend/src/db_bootstrap.py`)
-calls `citus_set_coordinator_host`, `citus_add_node` for each entry in
-`CITUS_WORKER_NODES`, then distributes tables. Compose wires
-`citus_worker_1:5432,citus_worker_2:5432` and waits for both workers to be
-healthy before the backend starts. `init.sql` only CREATE TABLEs — it cannot
-register workers that are not up yet.
+Postgres is a **single node** (no Citus). FastAPI startup
+(`backend/src/db_bootstrap.py`) creates the `api` schema, PostgREST
+roles, grants, and RLS. `init.sql` does the same on first volume
+create. `thread_id` / `api.threads.id` remain the one session key.
 
-Distribution:
-
-- `api.users` — **reference table** (replicated). Required so
-  `api.threads.user_id` can keep its FK.
-- `api.threads` — distributed by `id` (the thread_id shard key).
-- `api.messages` — distributed by `thread_id`, colocated with `api.threads`.
-  Primary key is `(thread_id, id)` because Citus unique/PK constraints must
-  include the distribution column. Existing volumes with PK `(id)` are
-  migrated on bootstrap.
+- `api.users` — auth identities.
+- `api.threads` — keyed by `id` (the thread_id).
+- `api.messages` — keyed by `(thread_id, id)` so history rows stay
+  colocated with their thread. History hydration still comes from the
+  LangGraph checkpointer, not PostgREST `messages(*)`.
 - LangGraph `checkpoints` / `checkpoint_blobs` / `checkpoint_writes` —
-  distributed by `thread_id` and colocated with each other. If Citus still
-  rejects LangGraph's `jsonb_each_text` correlated subquery (`invalid
-  attnum`), bootstrap **logs and leaves those tables local** rather than
-  failing the API schema. Re-verify against the installed
-  `langgraph-checkpoint-postgres` before assuming they sharded.
+  local tables keyed by `thread_id`.
 
-`thread_id` / `api.threads.id` remain the one session key. AG-UI run IDs and
-A2A `taskId`/`contextId` must resolve to that pair — no third ID system.
+AG-UI run IDs and A2A `taskId`/`contextId` must resolve to that pair —
+no third ID system.
 
 ## Hard rules
 
 - Any new identifier introduced by AG-UI (thread/run ID) or A2A (task ID,
-  context ID) must resolve to the existing `thread_id` value already threaded
-  through `ChatRequest`, the checkpoint tables, and `api.threads`. Do not
-  introduce a second, parallel session/task ID system.
-- Do not add `create_distributed_table` calls outside `db_bootstrap.py`.
-  Worker membership belongs there too (idempotent `citus_add_node`), not a
-  new compose service.
-- Don't describe the cluster as "distribution not yet enabled". Say
-  `api.threads` / `api.messages` are sharded by `thread_id`, users are a
-  reference table, and checkpoint tables are sharded unless bootstrap
-  recorded a fallback.
+  context ID) must resolve to the existing `thread_id` value already
+  threaded through `ChatRequest`, the checkpoint tables, and
+  `api.threads`. Do not introduce a second, parallel session/task ID
+  system.
+- Do not reintroduce Citus (`create_distributed_table`, worker
+  registration, `CITUS_*` env). Schema changes belong in
+  `db_bootstrap.py` (and `init.sql` for first boot).

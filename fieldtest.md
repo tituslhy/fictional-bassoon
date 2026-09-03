@@ -11,10 +11,10 @@ with mocks; they are not a substitute for a live round-trip.
 ## Still pending (laptop)
 
 A cloud agent bring-up (2026-09-02) cleared the pieces that do not need
-API keys. It could **not** run a live model round, and it could **not**
-run the full 45-container `make up` (nested Docker: no inter-container
-forwarding; RabbitMQ image died on vfs). The Citus bootstrap fix is on
-`main`; without it FastAPI dies on `create_reference_table('api.users')`.
+API keys. It could **not** run a live model round, and the old 45-container
+`make up` failed in nested Docker (RabbitMQ alpine died on vfs). The stack
+is now 14 pinned-tag containers (single Postgres, no Citus / Langfuse /
+ClickHouse / MinIO / Sentinel).
 
 Still yours after `make up-build` with real keys:
 
@@ -35,9 +35,9 @@ Still yours after `make up-build` with real keys:
   still writes a `checkpoints` row.
 - **§6** GitHub file view paints the root README mermaid (source has no
   known breakers; the rendered GitHub glance was not clicked).
-- **Full compose** — nginx `:80`, RabbitMQ broker, Langfuse / ClickHouse /
-  MinIO, LGTM. Cloud used coordinator + 2 workers + Redis + PostgREST +
-  FastAPI + Celery + Next.js only.
+- **Full compose** — nginx `:80`, single Postgres + PgBouncer + PostgREST,
+  one Redis, one RabbitMQ, LGTM, FastAPI, Celery, Next.js. LangSmith is
+  cloud-side (no local container).
 
 Already passed in that bring-up (do not re-prove unless you want to):
 
@@ -66,7 +66,7 @@ blocks — not a wall of raw markdown.
 1. Start a **new chat**. Empty state should read as a product ("How can I
    help?"), not a repo demo named fictional-bassoon.
 2. Ask something that **must** search, e.g.
-   `What's the latest news about Citus sharding? Search for it.`
+   `What's the latest news about LangGraph checkpointing? Search for it.`
 3. While the reply is in flight you should see, as **distinct UI blocks**:
    - a collapsible **reasoning** block (if the model emits thinking tokens)
    - one or more **tool_call** cards (`tavily_search` or similar) with
@@ -139,32 +139,31 @@ the connection closes.
 
 ---
 
-## 5. Citus is actually a cluster
+## 5. Postgres is a single node (PostgREST still works)
 
-On the coordinator (compose service `citus_coordinator`, db `postgres`
-or whatever `DB_URI` uses):
+On the compose service `postgres` (db from `POSTGRES_DB`):
 
 ```sql
-SELECT * FROM citus_get_active_worker_nodes();
--- expect two rows (citus_worker_1, citus_worker_2)
+SELECT extname FROM pg_extension;           -- pgcrypto present
+SELECT nspname FROM pg_namespace WHERE nspname = 'api';
+SELECT tablename FROM pg_tables WHERE schemaname = 'api' ORDER BY 1;
+-- expect messages, threads, users
 
-SELECT logicalrelid, partmethod, partkey
-FROM pg_dist_partition
-ORDER BY 1;
--- expect api.users (reference), api.threads (id), api.messages (thread_id)
--- checkpoint tables distributed by thread_id OR absent here if bootstrap
--- logged the jsonb_each_text fallback and left them local
+SELECT rolname FROM pg_roles
+WHERE rolname IN ('anon', 'web_user', 'authenticator');
+-- expect all three (PostgREST contract unchanged)
 ```
 
 Then send one chat message and confirm a new checkpoint row exists
 (`SELECT thread_id FROM checkpoints ORDER BY checkpoint_id DESC LIMIT 5`).
 
-Backend logs on first boot: `registered citus worker ...`,
-`distributed api.threads by id`. If checkpoint distribution failed,
-a warning — API schema still came up.
+Backend logs on first boot: `ensured api schema bootstrap`. PostgREST
+on `:3002` (or `/api/db/` via nginx) should list the `api` schema —
+`GET /threads` with a JWT still works; Citus no longer disables RLS
+on threads/messages.
 
-**Fail if:** `citus_get_active_worker_nodes()` is empty, or `api.threads`
-is not in `pg_dist_partition`.
+**Fail if:** `api` schema or the three PostgREST roles are missing, or
+PostgREST returns 503 / connection errors after `make up`.
 
 ---
 
@@ -190,5 +189,5 @@ already saw it; still re-tick if you want it on your machine.
 - [ ] §2 hydrate assistant + tool cards after refresh — **pending** (user-turn GET 200 in cloud)
 - [ ] §3 cursor only on the in-progress assistant bubble — **pending**
 - [x] §4 idle timeout — **passed in cloud** (re-tick on laptop if you kill a worker)
-- [ ] §5 Citus workers + `pg_dist_partition` — workers + API tables **passed in cloud**; live checkpoint write still **pending**
+- [ ] §5 single Postgres + PostgREST roles / `api` schema — **pending** (live checkpoint write still pending)
 - [ ] §6 mermaid renders on GitHub — **pending** (source inspected only)

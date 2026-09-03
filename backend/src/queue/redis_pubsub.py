@@ -6,42 +6,12 @@ import os
 from contextlib import asynccontextmanager
 
 import redis.asyncio as redis  # type: ignore[import-untyped]
-from redis.asyncio.sentinel import Sentinel  # type: ignore[import-untyped]
 
 logger = logging.getLogger("backend")
 
 
-def _get_sentinel_nodes():
-    nodes = os.getenv("APP_REDIS_SENTINEL_NODES", "").strip()
-    if not nodes:
-        return []
-
-    parsed_nodes = []
-    for node in nodes.split(","):
-        host, port = node.strip().split(":", 1)
-        parsed_nodes.append((host, int(port)))
-    return parsed_nodes
-
-
 def get_redis_client():
     """Create a new Redis client for the current event loop."""
-    sentinel_nodes = _get_sentinel_nodes()
-    if sentinel_nodes:
-        sentinel_master = os.getenv("APP_REDIS_SENTINEL_MASTER", "app-redis")
-        redis_db = int(os.getenv("APP_REDIS_DB", "0"))
-        redis_password = os.getenv("APP_REDIS_PASSWORD")
-        sentinel_password = os.getenv("APP_REDIS_SENTINEL_PASSWORD")
-
-        sentinel = Sentinel(
-            sentinel_nodes,
-            sentinel_kwargs={"password": sentinel_password} if sentinel_password else None,
-        )
-        return sentinel.master_for(
-            sentinel_master,
-            db=redis_db,
-            password=redis_password,
-        )
-
     return redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379"))
 
 

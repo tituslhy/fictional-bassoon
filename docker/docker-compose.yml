@@ -4,7 +4,7 @@ include:
 
 services:
   nginx:
-    image: nginx:alpine
+    image: nginx:1.27.4-alpine
     ports:
       - "80:80"
     volumes:

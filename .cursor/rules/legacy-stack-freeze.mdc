@@ -1,29 +1,28 @@
 ---
-description: Freeze Celery, Citus, ClickHouse, Redis Sentinel, and monitoring config during the protocol rewrite.
-globs: backend/docker/citus/**, backend/docker/clickhouse/**, backend/docker/monitoring/**, backend/docker/redis/**, backend/src/celery_app.py, backend/src/worker/tasks.py, backend/logging.ini
-alwaysApply: false
+description: Freeze Celery, Postgres init, RabbitMQ, and monitoring config during the protocol rewrite.
+globs: backend/docker/postgres/**, backend/docker/rabbitmq/**, backend/docker/monitoring/**, backend/src/celery_app.py, backend/src/worker/tasks.py, backend/logging.ini
 ---
 
 # Legacy Stack Freeze
 
 ## Context
 
-Celery/RabbitMQ task dispatch, the Citus/ClickHouse/Redis-Sentinel data
-layer, and the LGTM observability stack are not part of the
-AG-UI/A2UI/A2A rewrite's scope. `worker/tasks.py`'s job is bridging Celery's
-sync task context into the async agent run (`_run_coroutine_sync`) — that
-bridge stays exactly as it is; only what flows through it (the event payload
+Celery/RabbitMQ task dispatch, the Postgres/Redis/RabbitMQ data layer,
+and the LGTM observability stack are not part of the AG-UI/A2UI/A2A
+rewrite's scope. `worker/tasks.py`'s job is bridging Celery's sync task
+context into the async agent run (`_run_coroutine_sync`) — that bridge
+stays exactly as it is; only what flows through it (the event payload
 shape) changes.
 
 ## Hard rules
 
-- Don't edit Citus, ClickHouse, Redis Sentinel, monitoring, or Celery config
-  as a byproduct of wiring up a new protocol.
-- If a protocol requirement seems to force a change here — e.g. AG-UI needing
-  a different Celery result backend, or A2A task state needing new Redis
-  structures — stop and confirm with Titus before touching it. That's a
-  scope-boundary decision, not an implementation detail.
-- `worker/tasks.py`'s sync→async bridge (`_run_coroutine_sync`) is off-limits.
-  Only the payload that flows through `run_agent_and_stream` →
-  `stream_agent_events` changes shape for the new protocols; the Celery task
-  mechanics do not.
+- Don't edit Postgres init, RabbitMQ plugins, monitoring, or Celery
+  config as a byproduct of wiring up a new protocol.
+- If a protocol requirement seems to force a change here — e.g. AG-UI
+  needing a different Celery result backend, or A2A task state needing
+  new Redis structures — stop and confirm with Titus before touching
+  it. That's a scope-boundary decision, not an implementation detail.
+- `worker/tasks.py`'s sync→async bridge (`_run_coroutine_sync`) is
+  off-limits. Only the payload that flows through
+  `run_agent_and_stream` → `stream_agent_events` changes shape for the
+  new protocols; the Celery task mechanics do not.

@@ -13,7 +13,7 @@ This backend exposes:
 - `POST /a2a` — the **A2A JSON-RPC endpoint** (`a2a-sdk[fastapi]==1.1.2`): other agents call `SendMessage` and get the same chat pipeline, with A2A `taskId` == `job_id` and `contextId` == `thread_id`.
 - `GET /health` — health check (also reports Redis connectivity).
 
-Each chat message triggers a LangGraph Deep Agent that performs reasoning, makes tool calls (Tavily web search), and produces a final response — all streamed token by token. **Celery** handles background task processing, **Redis Sentinel** provides high-availability pub/sub, and **Langfuse** traces every run.
+Each chat message triggers a LangGraph Deep Agent that performs reasoning, makes tool calls (Tavily web search), and produces a final response — all streamed token by token. **Celery** handles background task processing, **Redis** carries the pub/sub stream, and **LangSmith** traces every run.
 
 ```mermaid
 flowchart LR
@@ -24,8 +24,8 @@ flowchart LR
     A -->|AG-UI events| R[Redis Pub/Sub]
     R -->|"stream:{job_id}"| F
     F -->|SSE| C
-    A -.->|traces| L[Langfuse]
-    A -->|checkpoints| D[(Postgres/Citus)]
+    A -.->|traces| L[LangSmith]
+    A -->|checkpoints| D[(Postgres via PgBouncer)]
 ```
 
 ## Prerequisites
@@ -33,9 +33,9 @@ flowchart LR
 - **Python 3.11+**
 - **uv** — Python package manager (`pip install uv`)
 - **RabbitMQ** — message broker for Celery (default: `localhost:5672`)
-- **Redis Sentinel** — high-availability pub/sub bridge
-- **PostgreSQL (Citus)** — LangGraph checkpointer for session/state persistence
-- **Langfuse Observability Suite** — for tracing and analytics
+- **Redis** — pub/sub bridge (`REDIS_URL`)
+- **PostgreSQL 16 + PgBouncer** — LangGraph checkpointer and PostgREST `api` schema
+- **LangSmith** — LLM tracing (no local container)
 
 ## Installation
 
@@ -65,7 +65,9 @@ Create a `.env` file in the `backend/` directory with the following variables:
 | `JWT_SECRET` | — | **Yes** | Auth token signing secret |
 | `OPENAI_API_KEY` | — | **Yes** | OpenAI API key for LLM |
 | `TAVILY_API_KEY` | — | **Yes** | Tavily API key for web search tool |
-| `LANGFUSE_*` | — | No | Langfuse observability credentials/endpoint (tracing degrades gracefully without them) |
+| `LANGSMITH_API_KEY` | — | No | LangSmith API key (tracing is off unless `LANGSMITH_TRACING=true`) |
+| `LANGSMITH_TRACING` | `true` in compose | No | Enable LangSmith tracing |
+| `LANGSMITH_PROJECT` | `fictional-bassoon` | No | LangSmith project name |
 
 ## Running the Application
 
@@ -107,7 +109,7 @@ curl -X POST http://localhost:8000/chat \
 ## Docker Deployment
 
 ```bash
-# Build and start all services (PostgreSQL/Citus, Redis Sentinel, Clickhouse, Minio, Langfuse, RabbitMQ, backend, celery_worker)
+# Build and start all services (Postgres, PgBouncer, PostgREST, Redis, RabbitMQ, LGTM, backend, celery_worker)
 docker compose up --build
 
 # Run in detached mode
@@ -123,12 +125,12 @@ docker compose down
 
 The Docker setup includes:
 
-- **Citus Cluster** — coordinator + 2 workers; `api.threads` / `api.messages` sharded by `thread_id` at FastAPI bootstrap
-- **Redis Sentinel Cluster** — high-availability pub/sub, task queuing, and caching
-- **Clickhouse Cluster** — high-performance analytics for observability
-- **Minio** — S3-compatible object storage for observability data
-- **Langfuse** — tracing and observability dashboard
-- **RabbitMQ 3** — Celery broker with management UI (port 5672 + 15672)
+- **PostgreSQL 16** — single node; `api` schema + LangGraph checkpoints
+- **PgBouncer** — transaction pool on `:6432` (FastAPI, Celery, PostgREST)
+- **PostgREST** — `api` schema REST (roles/JWT unchanged)
+- **Redis** — pub/sub for `stream:{job_id}`
+- **RabbitMQ 3.13** — Celery broker with management UI (port 5672 + 15672)
+- **LangSmith** — LLM traces (cloud; no local container)
 - **Backend** — FastAPI server (port 8000)
 - **Celery Worker** — background agent runner
 
@@ -274,9 +276,9 @@ backend/
 │
 ├── docker/
 │   ├── Dockerfile               # Multi-stage Docker image (Python 3.13-slim + uv)
-│   ├── citus/                   # Citus cluster init (checkpoint tables)
-│   ├── clickhouse/              # Clickhouse Cluster config
-│   └── redis/                   # Sentinel Cluster config
+│   ├── postgres/                # First-boot init.sql (checkpoints + api schema)
+│   ├── rabbitmq/                # enabled_plugins (management + prometheus)
+│   └── monitoring/              # LGTM (Prometheus / Grafana / Loki / Tempo / Alloy)
 │
 └── docker-compose.yaml          # Backend stack compose file
 ```
