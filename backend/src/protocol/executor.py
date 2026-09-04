@@ -20,10 +20,10 @@ its own ``contextId``/``taskId``, the SDK's default UUID generator mints one
 before this executor ever runs, and that same value flows straight through —
 never remapped, never duplicated.
 
-No new Redis structures, DB tables, or Celery changes were introduced to
-build this (`.claude/rules/legacy-stack-freeze.md`) — this reuses
-``run_agent_task.delay()`` and ``subscribe()``/``stream:{job_id}`` exactly as
-``main.py``'s ``/chat`` handler does today.
+Task persistence is the SDK ``TaskStore`` (Postgres ``a2a_tasks`` when
+``DB_URI`` is set). This executor still reuses ``run_agent_task.delay()``
+and ``subscribe()``/``stream:{job_id}`` exactly as ``main.py``'s ``/chat``
+handler does.
 """
 
 import asyncio

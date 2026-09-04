@@ -224,7 +224,7 @@ stateDiagram-v2
     failed --> [*]
 ```
 
-Known limitations (deliberate, documented): `CancelTask` is unsupported (would need a job_id→Celery-result mapping), and task state lives in the SDK's in-memory store (process-local).
+Known limitations (deliberate, documented): `CancelTask` is unsupported (would need a job_id→Celery-result mapping). Task state lives in Postgres (`a2a_tasks`) when `DB_URI` is set.
 
 ### GET /health
 

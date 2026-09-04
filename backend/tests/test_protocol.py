@@ -439,3 +439,54 @@ class TestRouter:
         assert router is not None
         # Should be mountable on FastAPI
         app.include_router(router, prefix="/a2a")
+
+
+class TestTaskStore:
+    def test_sqlalchemy_url_from_postgres_uri(self):
+        from src.protocol.task_store import sqlalchemy_url_from_db_uri
+
+        assert (
+            sqlalchemy_url_from_db_uri("postgresql://u:p@h:6432/db")
+            == "postgresql+psycopg://u:p@h:6432/db"
+        )
+        assert sqlalchemy_url_from_db_uri("postgresql+psycopg://x") == "postgresql+psycopg://x"
+
+    def test_build_inmemory_without_db_uri(self):
+        from a2a.server.tasks import InMemoryTaskStore
+
+        from src.protocol import task_store as ts
+
+        ts._store = None
+        with patch.dict("os.environ", {}, clear=True):
+            store = ts.build_task_store()
+        assert isinstance(store, InMemoryTaskStore)
+
+    def test_build_postgres_when_db_uri_set(self):
+        from src.protocol import task_store as ts
+
+        mock_store = MagicMock()
+        mock_engine = MagicMock()
+        with (
+            patch.dict("os.environ", {"DB_URI": "postgresql://u:p@h:6432/db"}, clear=True),
+            patch("sqlalchemy.ext.asyncio.create_async_engine", return_value=mock_engine),
+            patch("a2a.server.tasks.DatabaseTaskStore", return_value=mock_store) as store_cls,
+        ):
+            store = ts.build_task_store()
+
+        assert store is mock_store
+        store_cls.assert_called_once()
+        assert store_cls.call_args.kwargs["table_name"] == "a2a_tasks"
+        assert store_cls.call_args.kwargs["create_table"] is True
+
+    @pytest.mark.asyncio
+    async def test_init_task_store_calls_initialize(self):
+        from src.protocol import task_store as ts
+
+        mock_store = MagicMock()
+        mock_store.initialize = AsyncMock()
+        ts._store = mock_store
+        try:
+            await ts.init_task_store()
+            mock_store.initialize.assert_awaited_once()
+        finally:
+            ts._store = None

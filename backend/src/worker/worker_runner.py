@@ -7,6 +7,7 @@ from psycopg_pool import AsyncConnectionPool
 
 from src.agent import get_agent
 from src.queue.redis_pubsub import get_redis_connection, publish_event
+from src.telemetry import agent_run_span
 from utils.streaming import stream_agent_events
 
 logger = logging.getLogger("backend")
@@ -20,6 +21,11 @@ async def run_agent_and_stream(request):
         request.thread_id,
     )
 
+    with agent_run_span(request.job_id, request.thread_id):
+        return await _run_agent_and_stream(request)
+
+
+async def _run_agent_and_stream(request):
     agent = None
     conn = None
 

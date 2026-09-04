@@ -373,10 +373,9 @@ share files, and `a2a-integrator` is idle. If anyone later dispatches
 These stay open regardless of the `[ ]` statuses above. Do not silently
 resolve any of them; each needs Titus's call.
 
-- A2A `cancel()` unsupported (raises `UnsupportedOperationError`) and
-  `InMemoryTaskStore` is process-local (lost on restart, not shared across
-  replicas). Fixing either crosses the `legacy-stack-freeze.md` scope
-  boundary.
+- A2A `cancel()` unsupported (raises `UnsupportedOperationError`). Task
+  state now lives in Postgres (`a2a_tasks` via `DatabaseTaskStore`).
+  Cancel still needs a job_id→Celery-result mapping — not done.
 - Optional adoption of the official `@a2ui/web_core` / `@a2ui/react`
   packages (deliberately not installed — see
   `protocol-version-pinning.md`). Task 6 uses the existing 4-type subset
@@ -413,3 +412,6 @@ resolve any of them; each needs Titus's call.
 - 2026-09-03 — Infra cut: Langfuse/ClickHouse/MinIO/Citus/Sentinel
   removed. 14 pinned-tag containers. Task 4 superseded (single
   Postgres + PgBouncer; PostgREST unchanged). LLM traces → LangSmith.
+- 2026-09-04 — A2A TaskStore → Postgres `a2a_tasks`. Unused
+  `onA2UITree` hook path removed (live tree is backend CUSTOM).
+  Optional OTLP → Tempo for FastAPI + worker span. Notebook gone.

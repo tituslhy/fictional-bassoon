@@ -312,46 +312,6 @@ describe('useSSEStream', () => {
     expect(onEvent).toHaveBeenCalledWith({ event: 'RUN_FINISHED', data: '{}' });
   });
 
-  it('should build and report an A2UI tree via onA2UITree from real AG-UI events', async () => {
-    const onEvent = vi.fn();
-    const onA2UITree = vi.fn();
-    const mockResponse = {
-      ok: true,
-      body: {
-        getReader: () => ({
-          read: vi
-            .fn()
-            .mockResolvedValueOnce({
-              done: false,
-              value: new TextEncoder().encode(
-                'event: TEXT_MESSAGE_CONTENT\ndata: {"messageId":"m1","delta":"Hi"}\n\n'
-              ),
-            })
-            .mockResolvedValueOnce({
-              done: false,
-              value: new TextEncoder().encode('event: RUN_FINISHED\ndata: {}\n\n'),
-            })
-            .mockResolvedValueOnce({ done: true }),
-          releaseLock: vi.fn(),
-        }),
-      },
-    };
-
-    global.fetch = vi.fn().mockResolvedValue(mockResponse);
-
-    const { result } = renderHook(() => useSSEStream({ onEvent, onA2UITree }));
-    await act(async () => {
-      result.current.start({ message: 'test', thread_id: '1' });
-    });
-
-    await waitFor(() => {
-      expect(onA2UITree).toHaveBeenCalled();
-    });
-
-    const lastCallTree = onA2UITree.mock.calls[onA2UITree.mock.calls.length - 1][0];
-    expect(lastCallTree.component).toBe('column');
-  });
-
   it('should handle SSE error', async () => {
     const onError = vi.fn();
     global.fetch = vi.fn().mockRejectedValue(new Error('Network error'));

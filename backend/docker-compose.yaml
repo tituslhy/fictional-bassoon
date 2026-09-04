@@ -138,6 +138,7 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       LANGSMITH_TRACING: ${LANGSMITH_TRACING:-true}
       LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-fictional-bassoon}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://tempo:4318}
     depends_on:
       postgres:
         condition: service_healthy
@@ -175,6 +176,7 @@ services:
       METRICS_PORT: 8001
       LANGSMITH_TRACING: ${LANGSMITH_TRACING:-true}
       LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-fictional-bassoon}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://tempo:4318}
     depends_on:
       postgres:
         condition: service_healthy
