@@ -1,13 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
 import type { SSEEvent, SSEEventType } from '@/types';
-import type { A2UIComponentNode } from '@/lib/a2ui/schema';
-import { validateComponentTree } from '@/lib/a2ui/validator';
-import {
-  createEmptyA2UIStreamState,
-  applyAGUIStreamEvent,
-  streamStateToA2UITree,
-} from '@/lib/a2ui/agui/streamState';
-import { parseAGUIStreamEvent } from '@/lib/a2ui/agui/events';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -23,13 +15,6 @@ interface UseSSEStreamOptions {
   onError?: (error: string) => void;
   onComplete?: () => void;
   token?: string | null;
-  /**
-   * Optional: receives an A2UI component tree rebuilt after each frame,
-   * driven directly by the real AG-UI event stream (`lib/a2ui/agui/`). The
-   * SSE transport itself (fetch + reader, below) is untouched by any of
-   * this — `sse-transport-lock.md`.
-   */
-  onA2UITree?: (tree: A2UIComponentNode) => void;
 }
 
 export function useSSEStream(options: UseSSEStreamOptions) {
@@ -46,11 +31,6 @@ export function useSSEStream(options: UseSSEStreamOptions) {
     (body: { message: string; thread_id: string; job_id?: string }) => {
       abortRef.current = new AbortController();
       setIsStreaming(true);
-
-      // Running accumulator for the optional A2UI tree pipeline (see
-      // `onA2UITree` doc comment above) — inert unless a caller passes
-      // `onA2UITree`.
-      let a2uiState = createEmptyA2UIStreamState();
 
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
@@ -97,9 +77,6 @@ export function useSSEStream(options: UseSSEStreamOptions) {
                 const parsed = parseSSE(chunk);
                 if (!parsed) continue;
                 options.onEvent(parsed);
-                if (options.onA2UITree) {
-                  a2uiState = applyA2UIFrame(a2uiState, parsed, options.onA2UITree);
-                }
                 if (TERMINAL_EVENTS.has(parsed.event)) {
                   receivedTerminalEvent = true;
                   options.onComplete?.();
@@ -158,38 +135,4 @@ function parseSSE(text: string): SSEEvent | null {
 
   if (!hasData || event === null) return null;
   return { event, data };
-}
-
-/**
- * Runs one real AG-UI SSE frame through `lib/a2ui/agui/events.ts`'s parser,
- * updates the running accumulator, validates the resulting tree, and
- * reports it. Validation/parse failures are logged rather than thrown — a
- * bad A2UI tree here is an A2UI-pipeline bug, not a reason to tear down the
- * SSE stream (`sse-transport-lock.md` — the transport keeps running
- * regardless).
- */
-function applyA2UIFrame(
-  state: ReturnType<typeof createEmptyA2UIStreamState>,
-  frame: SSEEvent,
-  onA2UITree: (tree: A2UIComponentNode) => void
-): ReturnType<typeof createEmptyA2UIStreamState> {
-  const aguiEvent = parseAGUIStreamEvent(frame);
-  if (!aguiEvent) return state;
-
-  if (aguiEvent.type === 'CUSTOM' && aguiEvent.name === 'a2ui') {
-    try {
-      onA2UITree(validateComponentTree(aguiEvent.value));
-    } catch (err) {
-      console.error('A2UI tree validation failed', err);
-    }
-    return state;
-  }
-
-  const nextState = applyAGUIStreamEvent(state, aguiEvent);
-  try {
-    onA2UITree(validateComponentTree(streamStateToA2UITree(nextState)));
-  } catch (err) {
-    console.error('A2UI tree validation failed', err);
-  }
-  return nextState;
 }

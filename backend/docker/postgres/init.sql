@@ -1,20 +1,20 @@
--- Create LangGraph tables (latest schema for langgraph-checkpoint-postgres).
--- Worker registration and create_distributed_table run at FastAPI startup
--- (backend/src/db_bootstrap.py) because this file executes before worker
--- containers are reachable. Checkpoint tables are distributed by thread_id
--- and colocated with each other; if Citus still rejects LangGraph's
--- jsonb_each_text correlated subquery, bootstrap leaves them local rather
--- than failing the API schema. See .claude/rules/citus-thread-id-integrity.md.
+-- First-boot schema for a single PostgreSQL 16 instance.
+-- FastAPI also runs the same statements idempotently in
+-- backend/src/db_bootstrap.py on every startup.
 
--- IMPORTANT: We use the 'public' schema for LangGraph, but we must ensure it
--- doesn't conflict with Langfuse. Langfuse will be forced into its own schema.
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-------------------------------------------------------------------------------
+-- LangGraph checkpointer (public schema)
+-------------------------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS checkpoint_migrations (
     v INTEGER PRIMARY KEY
 );
 
--- Insert current migration version to prevent library-led migration conflicts
-INSERT INTO checkpoint_migrations (v) VALUES (0), (1), (2), (3), (4), (5), (6), (7), (8), (9) ON CONFLICT (v) DO NOTHING;
+INSERT INTO checkpoint_migrations (v)
+VALUES (0), (1), (2), (3), (4), (5), (6), (7), (8), (9)
+ON CONFLICT (v) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS checkpoints (
     thread_id TEXT NOT NULL,
@@ -50,19 +50,18 @@ CREATE TABLE IF NOT EXISTS checkpoint_writes (
     PRIMARY KEY (thread_id, checkpoint_ns, checkpoint_id, task_id, idx)
 );
 
--- Indices for performance
 CREATE INDEX IF NOT EXISTS checkpoints_thread_id_idx ON checkpoints(thread_id);
 CREATE INDEX IF NOT EXISTS checkpoint_blobs_thread_id_idx ON checkpoint_blobs(thread_id);
 CREATE INDEX IF NOT EXISTS checkpoint_writes_thread_id_idx ON checkpoint_writes(thread_id);
 
 -------------------------------------------------------------------------------
--- PostgREST Integration
+-- PostgREST API schema (roles, grants, RLS)
+-- Unchanged from the Citus-era contract: PostgREST still speaks schema
+-- `api` as authenticator, switching to anon / web_user via JWT.
 -------------------------------------------------------------------------------
 
--- 1. Create dedicated API schema
 CREATE SCHEMA IF NOT EXISTS api;
 
--- 2. Create users table for authentication (stored in api schema)
 CREATE TABLE IF NOT EXISTS api.users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email TEXT UNIQUE NOT NULL,
@@ -72,7 +71,6 @@ CREATE TABLE IF NOT EXISTS api.users (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
--- 3. Create threads table
 CREATE TABLE IF NOT EXISTS api.threads (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES api.users(id) ON DELETE CASCADE,
@@ -81,22 +79,19 @@ CREATE TABLE IF NOT EXISTS api.threads (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
--- 4. Create messages table
-    CREATE TABLE IF NOT EXISTS api.messages (
-      id UUID NOT NULL DEFAULT gen_random_uuid(),
-      thread_id UUID NOT NULL REFERENCES api.threads(id) ON DELETE CASCADE,
-      role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
-      content TEXT NOT NULL,
-      reasoning TEXT,
-      tool_calls JSONB DEFAULT '[]'::jsonb,
-      status TEXT DEFAULT 'done' CHECK (status IN ('streaming', 'done', 'error')),
-      error TEXT,
-      created_at TIMESTAMPTZ DEFAULT now(),
-      PRIMARY KEY (thread_id, id)
-    );
+CREATE TABLE IF NOT EXISTS api.messages (
+  id UUID NOT NULL DEFAULT gen_random_uuid(),
+  thread_id UUID NOT NULL REFERENCES api.threads(id) ON DELETE CASCADE,
+  role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+  content TEXT NOT NULL,
+  reasoning TEXT,
+  tool_calls JSONB DEFAULT '[]'::jsonb,
+  status TEXT DEFAULT 'done' CHECK (status IN ('streaming', 'done', 'error')),
+  error TEXT,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  PRIMARY KEY (thread_id, id)
+);
 
--- 5. Create roles for PostgREST
--- Use DO blocks to handle existing roles gracefully
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'anon') THEN
@@ -106,51 +101,40 @@ BEGIN
     CREATE ROLE web_user NOLOGIN;
   END IF;
   IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'authenticator') THEN
-    -- The password here is a placeholder, it should be set via env var in docker-compose
     CREATE ROLE authenticator NOINHERIT LOGIN PASSWORD 'authenticator_password';
   END IF;
 END
 $$;
 
--- Grant authenticator the ability to switch roles
 GRANT anon TO authenticator;
 GRANT web_user TO authenticator;
 
--- 6. Permissions
--- Schema usage
 GRANT USAGE ON SCHEMA api TO anon;
 GRANT USAGE ON SCHEMA api TO web_user;
 
--- Anonymous permissions (Signup)
 GRANT INSERT ON api.users TO anon;
 GRANT SELECT (id, email) ON api.users TO anon;
 
--- Web user permissions
 GRANT SELECT, UPDATE ON api.users TO web_user;
 GRANT ALL ON api.threads TO web_user;
 GRANT ALL ON api.messages TO web_user;
 
--- Enable Row Level Security
 ALTER TABLE api.users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.threads ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.messages ENABLE ROW LEVEL SECURITY;
 
--- Anonymous can only signup (INSERT)
 CREATE POLICY anon_signup ON api.users FOR INSERT TO anon WITH CHECK (true);
 
--- Users can only see and update their own data
 CREATE POLICY user_self_manage ON api.users
   FOR ALL TO web_user
   USING (id = (current_setting('request.jwt.claims', true)::jsonb->>'user_id')::uuid)
   WITH CHECK (id = (current_setting('request.jwt.claims', true)::jsonb->>'user_id')::uuid);
 
--- Threads RLS
 CREATE POLICY thread_access ON api.threads
   FOR ALL TO web_user
   USING (user_id = (current_setting('request.jwt.claims', true)::jsonb->>'user_id')::uuid)
   WITH CHECK (user_id = (current_setting('request.jwt.claims', true)::jsonb->>'user_id')::uuid);
 
--- Messages RLS (via thread ownership)
 CREATE POLICY message_access ON api.messages
   FOR ALL TO web_user
   USING (
@@ -168,7 +152,6 @@ CREATE POLICY message_access ON api.messages
     )
   );
 
--- 7. Helper to update 'updated_at'
 CREATE OR REPLACE FUNCTION api.update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -177,10 +160,10 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
-CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON api.users FOR EACH ROW EXECUTE PROCEDURE api.update_updated_at_column();
-CREATE TRIGGER update_threads_updated_at BEFORE UPDATE ON api.threads FOR EACH ROW EXECUTE PROCEDURE api.update_updated_at_column();
+CREATE TRIGGER update_users_updated_at
+  BEFORE UPDATE ON api.users
+  FOR EACH ROW EXECUTE PROCEDURE api.update_updated_at_column();
 
--------------------------------------------------------------------------------
--- Langfuse Isolation
--------------------------------------------------------------------------------
-CREATE SCHEMA IF NOT EXISTS langfuse;
+CREATE TRIGGER update_threads_updated_at
+  BEFORE UPDATE ON api.threads
+  FOR EACH ROW EXECUTE PROCEDURE api.update_updated_at_column();

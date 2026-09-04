@@ -7,6 +7,10 @@ from celery import Celery
 from celery.signals import worker_ready
 from prometheus_client import start_http_server
 
+from src.telemetry import setup_telemetry
+
+setup_telemetry("celery_worker")
+
 logger = logging.getLogger("backend")
 
 celery_app = Celery(

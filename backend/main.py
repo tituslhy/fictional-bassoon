@@ -28,7 +28,9 @@ from src.models.auth_models import LoginRequest, SignupRequest, TokenResponse
 from src.models.chat_models import ChatRequest, HealthResponse, HistoryResponse
 from src.protocol.executor import IDLE_TIMEOUT_SECONDS
 from src.protocol.router import build_a2a_router
+from src.protocol.task_store import init_task_store
 from src.queue.redis_pubsub import redis_client, subscribe
+from src.telemetry import instrument_fastapi, setup_telemetry
 from src.worker.tasks import run_agent_task
 
 # Configure logging from INI file
@@ -37,18 +39,20 @@ Path("logs").mkdir(exist_ok=True)
 fileConfig(LOGGING_CONFIG_PATH, disable_existing_loggers=False)
 logger = logging.getLogger("backend")
 
+setup_telemetry("backend")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Initialize pool on startup
     pool = await get_db_pool()
     await ensure_api_schema(pool)
+    await init_task_store()
     yield
-    # Close pool on shutdown
     await close_db_pool()
 
 
 app = FastAPI(lifespan=lifespan)
+instrument_fastapi(app)
 
 app.add_middleware(
     CORSMiddleware,

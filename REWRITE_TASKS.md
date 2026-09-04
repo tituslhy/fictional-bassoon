@@ -12,8 +12,8 @@ trusting it.
 The AG-UI / A2UI / A2A rewrite landed 2026-09-01 (reviewer-verified, live
 smoke test passed). That tracker is gone; git history still has it. This
 file tracks the next batch: hydrate the chat UI from the LangGraph
-checkpointer, two logic breaks from the 2026-09-01 code review, real
-Citus sharding, root README mermaid rendering, A2UI as a wire protocol
+checkpointer, two logic breaks from the 2026-09-01 code review,
+min-container infra (Citus/Langfuse gone), root README mermaid rendering, A2UI as a wire protocol
 (agent-emitted UI JSON), laptop field tests, and a product-looking
 generic chat UI.
 
@@ -189,35 +189,13 @@ timeout must not change the AG-UI terminal contract (`RUN_ERROR` is
 terminal on its own). Do **not** dispatch `a2a-integrator` for the
 import.
 
-## 4. Real Citus sharding — workers join, tables distribute
+## 4. ~~Real Citus sharding~~ superseded — single Postgres
 
-Titus 2026-09-01: yes, we want real sharding. The coordinator + 2 worker
-containers already ran; they never formed a cluster.
-
-**Implementation already landed** in `db_bootstrap.py` (this branch).
-Not `[x]` — not independently verified, and live smoke has not run.
-
-- [~] Register workers at FastAPI startup (`citus_set_coordinator_host` +
-      idempotent `citus_add_node` from `CITUS_WORKER_NODES`). No new
-      compose service. Backend waits on both workers healthy.
-- [~] `api.users` as a **reference table**; `api.threads` distributed by
-      `id`; `api.messages` distributed by `thread_id` and colocated.
-      Messages PK is `(thread_id, id)` (Citus unique-constraint rule);
-      existing volumes with PK `(id)` are migrated on bootstrap.
-- [~] LangGraph checkpoint tables distributed by `thread_id`, colocated
-      with each other. If Citus still rejects LangGraph's `jsonb_each_text`
-      subquery, bootstrap logs and leaves them local instead of failing
-      the API schema.
-- [ ] Live smoke after `make up`: `SELECT * FROM citus_get_active_worker_nodes()`
-      returns both workers; `pg_dist_partition` lists `api.threads` /
-      `api.messages`; a chat round-trip still checkpointers. **This smoke
-      belongs in `fieldtest.md` and runs on a local laptop — not in the
-      cloud (no API keys here).** Do not re-implement bootstrap.
-
-Owner: already `db_bootstrap.py` + compose env. Docs in
-`citus-thread-id-integrity.md`. Frozen stack: do not touch
-`backend/docker/citus/**` as a byproduct of tasks 1–3/5–8
-(`legacy-stack-freeze.md`).
+Superseded by the min-container infra cut: Citus coordinator + 2 workers
+are gone. `db_bootstrap.py` now only creates the `api` schema / roles /
+RLS on one PostgreSQL 16. `thread_id` is still the one session key
+(`citus-thread-id-integrity.md`). Live smoke is fieldtest §5 (schema +
+PostgREST roles + a checkpoint row).
 
 ## 5. Root README mermaid diagrams do not render
 
@@ -302,10 +280,9 @@ environment** (no API keys, no live LLM/Tavily).
       - `/chat` idle timeout if feasible (dead worker / blocked listen
         → `RUN_ERROR`, composer unlocks). Skip or note if too
         destructive for a casual pass.
-      - Citus smoke SQL: `citus_get_active_worker_nodes()`,
-        `pg_dist_partition` for `api.threads` / `api.messages`,
-        checkpoint tables distributed **or** bootstrap log shows the
-        local fallback; one chat round-trip still checkpointers
+      - Postgres smoke SQL: `api` schema + PostgREST roles
+        (`anon` / `web_user` / `authenticator`); one chat round-trip
+        still writes a `checkpoints` row
       - Mermaid glance: root README diagrams render on GitHub preview
         / local mermaid renderer
 
@@ -396,10 +373,9 @@ share files, and `a2a-integrator` is idle. If anyone later dispatches
 These stay open regardless of the `[ ]` statuses above. Do not silently
 resolve any of them; each needs Titus's call.
 
-- A2A `cancel()` unsupported (raises `UnsupportedOperationError`) and
-  `InMemoryTaskStore` is process-local (lost on restart, not shared across
-  replicas). Fixing either crosses the `legacy-stack-freeze.md` scope
-  boundary.
+- A2A `cancel()` unsupported (raises `UnsupportedOperationError`). Task
+  state now lives in Postgres (`a2a_tasks` via `DatabaseTaskStore`).
+  Cancel still needs a job_id→Celery-result mapping — not done.
 - Optional adoption of the official `@a2ui/web_core` / `@a2ui/react`
   packages (deliberately not installed — see
   `protocol-version-pinning.md`). Task 6 uses the existing 4-type subset
@@ -433,3 +409,9 @@ resolve any of them; each needs Titus's call.
   GET succeeded while the pane stayed empty). Task 4 live smoke still
   `[ ]`. Follow-up: Chat reads `threads` from context; idle timeout
   closes open AG-UI brackets; unexpected stream end is `error`.
+- 2026-09-03 — Infra cut: Langfuse/ClickHouse/MinIO/Citus/Sentinel
+  removed. 14 pinned-tag containers. Task 4 superseded (single
+  Postgres + PgBouncer; PostgREST unchanged). LLM traces → LangSmith.
+- 2026-09-04 — A2A TaskStore → Postgres `a2a_tasks`. Unused
+  `onA2UITree` hook path removed (live tree is backend CUSTOM).
+  Optional OTLP → Tempo for FastAPI + worker span. Notebook gone.

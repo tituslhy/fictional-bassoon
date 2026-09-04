@@ -1,147 +1,26 @@
+# Minimal local stack — 12 services here + nginx + frontend = 14 total.
+# Floating :latest tags are avoided: they were a source of sudden compose
+# deaths when upstream rebuilt (RabbitMQ alpine/vfs, ClickHouse, MinIO).
+# Images are multi-arch; do not pin platform: linux/amd64 (Citus required
+# that and qemu'd Docker Desktop off a cliff on Apple Silicon).
+#
+# Pins (why this tag):
+#   postgres:16.8                         — Citus 13 was PG16; 16.8 is a
+#                                           released minor, debian not alpine
+#   edoburu/pgbouncer:v1.24.1-p1          — last widely-mirrored 1.24.x
+#   postgrest/postgrest:v12.2.8           — JWT + schema config unchanged
+#   redis:7.4.2-alpine                    — current 7.4 patch, not 8.x
+#   rabbitmq:3.13.7-management            — debian, not alpine (vfs crash)
+#   prom/prometheus:v2.55.1               — 3.x changes scrape defaults
+#   grafana/grafana:11.5.2                — 12.x breaks provisioning
+#   grafana/loki:3.0.0                    — matches local-config.yaml
+#   grafana/tempo:2.7.2                   — matches tempo.yaml receivers
+#   grafana/alloy:v1.5.1                  — matches config.alloy syntax
+
 services:
-  clickhouse-01:
-    image: clickhouse/clickhouse-server:latest
-    container_name: clickhouse-01
-    hostname: clickhouse-01
-    ports:
-      - "18123:8123"
-      - "19000:9000"
-    volumes:
-      - ./docker/clickhouse/clickhouse-01/config.d/config.xml:/etc/clickhouse-server/config.d/config.xml:ro
-      - ./docker/clickhouse/clickhouse-01/users.d/users.xml:/etc/clickhouse-server/users.d/users.xml:ro
-      - clickhouse_01_data:/var/lib/clickhouse
-    environment:
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-changeme}
-    depends_on:
-      clickhouse-keeper-01:
-        condition: service_healthy
-      clickhouse-keeper-02:
-        condition: service_healthy
-      clickhouse-keeper-03:
-        condition: service_healthy
-    networks:
-      - app_network
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8123/ping"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
-  clickhouse-02:
-    image: clickhouse/clickhouse-server:latest
-    container_name: clickhouse-02
-    hostname: clickhouse-02
-    ports:
-      - "18124:8123"
-    volumes:
-      - ./docker/clickhouse/clickhouse-02/config.d/config.xml:/etc/clickhouse-server/config.d/config.xml:ro
-      - ./docker/clickhouse/clickhouse-02/users.d/users.xml:/etc/clickhouse-server/users.d/users.xml:ro
-      - clickhouse_02_data:/var/lib/clickhouse
-    environment:
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-changeme}
-    depends_on:
-      clickhouse-keeper-01:
-        condition: service_healthy
-      clickhouse-keeper-02:
-        condition: service_healthy
-      clickhouse-keeper-03:
-        condition: service_healthy
-    networks:
-      - app_network
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8123/ping"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
-  clickhouse-03:
-    image: clickhouse/clickhouse-server:latest
-    container_name: clickhouse-03
-    hostname: clickhouse-03
-    ports:
-      - "18125:8123"
-    volumes:
-      - ./docker/clickhouse/clickhouse-03/config.d/config.xml:/etc/clickhouse-server/config.d/config.xml:ro
-      - ./docker/clickhouse/clickhouse-03/users.d/users.xml:/etc/clickhouse-server/users.d/users.xml:ro
-      - clickhouse_03_data:/var/lib/clickhouse
-    environment:
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-changeme}
-    depends_on:
-      clickhouse-keeper-01:
-        condition: service_healthy
-      clickhouse-keeper-02:
-        condition: service_healthy
-      clickhouse-keeper-03:
-        condition: service_healthy
-    networks:
-      - app_network
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8123/ping"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
-  clickhouse-keeper-01:
-    image: clickhouse/clickhouse-keeper:latest-alpine
-    container_name: clickhouse-keeper-01
-    hostname: clickhouse-keeper-01
-    init: true
-    ports:
-      - "9181:9181"
-    volumes:
-      - ./docker/clickhouse/keeper-01/keeper_config.xml:/etc/clickhouse-keeper/keeper_config.xml:ro
-      - clickhouse_keeper_01_data:/var/lib/clickhouse
-    networks:
-      - app_network
-    healthcheck:
-      test: ["CMD-SHELL", "echo ruok | nc 127.0.0.1 9181 | grep imok"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-      start_period: 10s
-
-  clickhouse-keeper-02:
-    image: clickhouse/clickhouse-keeper:latest-alpine
-    container_name: clickhouse-keeper-02
-    hostname: clickhouse-keeper-02
-    init: true
-    ports:
-      - "9182:9181"
-    volumes:
-      - ./docker/clickhouse/keeper-02/keeper_config.xml:/etc/clickhouse-keeper/keeper_config.xml:ro
-      - clickhouse_keeper_02_data:/var/lib/clickhouse
-    networks:
-      - app_network
-    healthcheck:
-      test: ["CMD-SHELL", "echo ruok | nc 127.0.0.1 9181 | grep imok"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-      start_period: 10s
-
-  clickhouse-keeper-03:
-    image: clickhouse/clickhouse-keeper:latest-alpine
-    container_name: clickhouse-keeper-03
-    hostname: clickhouse-keeper-03
-    init: true
-    ports:
-      - "9183:9181"
-    volumes:
-      - ./docker/clickhouse/keeper-03/keeper_config.xml:/etc/clickhouse-keeper/keeper_config.xml:ro
-      - clickhouse_keeper_03_data:/var/lib/clickhouse
-    networks:
-      - app_network
-    healthcheck:
-      test: ["CMD-SHELL", "echo ruok | nc 127.0.0.1 9181 | grep imok"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-      start_period: 10s
-
-  citus_coordinator:
-    image: citusdata/citus:13.0
-    container_name: citus_coordinator
-    platform: linux/amd64
+  postgres:
+    image: postgres:16.8
+    container_name: postgres
     ports:
       - "5432:5432"
     environment:
@@ -150,67 +29,22 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_HOST_AUTH_METHOD: trust
     volumes:
-      - citus_coordinator_data:/var/lib/postgresql/data
-      - ./docker/citus/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     networks:
       - app_network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 3s
-      retries: 5
-
-  citus_worker_1:
-    image: citusdata/citus:13.0
-    container_name: citus_worker_1
-    hostname: citus_worker_1
-    platform: linux/amd64
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_HOST_AUTH_METHOD: trust
-    volumes:
-      - citus_worker_1_data:/var/lib/postgresql/data
-    networks:
-      - app_network
-    depends_on:
-      - citus_coordinator
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
-  citus_worker_2:
-    image: citusdata/citus:13.0
-    container_name: citus_worker_2
-    hostname: citus_worker_2
-    platform: linux/amd64
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_HOST_AUTH_METHOD: trust
-    volumes:
-      - citus_worker_2_data:/var/lib/postgresql/data
-    networks:
-      - app_network
-    depends_on:
-      - citus_coordinator
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
+      retries: 10
 
   pgbouncer:
-    image: edoburu/pgbouncer:latest
-    platform: linux/amd64
+    image: edoburu/pgbouncer:v1.24.1-p1
     ports:
       - "6432:6432"
     environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@citus_coordinator:5432/${POSTGRES_DB}
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - LISTEN_ADDR=0.0.0.0
       - LISTEN_PORT=6432
       - AUTH_TYPE=trust
@@ -219,22 +53,25 @@ services:
       - DEFAULT_POOL_SIZE=20
       - ADMIN_USERS=${POSTGRES_USER}
     depends_on:
-      citus_coordinator:
+      postgres:
         condition: service_healthy
     networks:
       - app_network
     healthcheck:
-      test: ["CMD", "pgbouncer", "--version"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 6432"]
       interval: 5s
       timeout: 3s
-      retries: 5
+      retries: 10
 
+  # PostgREST is unchanged: schema `api`, roles anon/web_user/authenticator,
+  # JWT via PGRST_JWT_SECRET, still pooled through pgbouncer:6432. Single-node
+  # Postgres means RLS on api.threads / api.messages actually evaluates
+  # request.jwt.claims (Citus worker shards never saw that GUC).
   postgrest:
-    image: postgrest/postgrest:latest
+    image: postgrest/postgrest:v12.2.8
     ports:
-      - "3002:3000" # Avoid conflict with frontend on 3000
+      - "3002:3000"
     environment:
-      # Connect via PgBouncer for stability and pooling
       PGRST_DB_URI: postgresql://authenticator:${PGRST_DB_PASS:-authenticator_password}@pgbouncer:6432/${POSTGRES_DB}
       PGRST_DB_SCHEMA: api
       PGRST_DB_ANON_ROLE: anon
@@ -245,49 +82,8 @@ services:
     networks:
       - app_network
 
-  # Exporters
-  citus_coordinator_exporter:
-    image: prometheuscommunity/postgres-exporter:latest
-    environment:
-      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@citus_coordinator:5432/${POSTGRES_DB}?sslmode=disable"
-    depends_on:
-      citus_coordinator:
-        condition: service_healthy
-    networks:
-      - app_network
-
-  citus_worker_1_exporter:
-    image: prometheuscommunity/postgres-exporter:latest
-    environment:
-      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@citus_worker_1:5432/${POSTGRES_DB}?sslmode=disable"
-    depends_on:
-      citus_worker_1:
-        condition: service_healthy
-    networks:
-      - app_network
-
-  citus_worker_2_exporter:
-    image: prometheuscommunity/postgres-exporter:latest
-    environment:
-      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@citus_worker_2:5432/${POSTGRES_DB}?sslmode=disable"
-    depends_on:
-      citus_worker_2:
-        condition: service_healthy
-    networks:
-      - app_network
-
-  pgbouncer_exporter:
-    image: prometheuscommunity/pgbouncer-exporter:latest
-    environment:
-      PGBOUNCER_EXPORTER_CONNECTION_STRING: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@pgbouncer:6432/pgbouncer?sslmode=disable"
-    depends_on:
-      pgbouncer:
-        condition: service_healthy
-    networks:
-      - app_network
-
   redis:
-    image: redis:7-alpine
+    image: redis:7.4.2-alpine
     ports:
       - "6379:6379"
     volumes:
@@ -300,421 +96,26 @@ services:
       timeout: 3s
       retries: 5
 
-  app-redis-primary:
-    image: redis:7-alpine
-    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
-    ports:
-      - "16380:6379"
-    volumes:
-      - ./docker/redis/app-primary/redis.conf:/usr/local/etc/redis/redis.conf:ro
-      - app_redis_primary_data:/data
-    networks:
-      - app_network
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
-  app-redis-replica-1:
-    image: redis:7-alpine
-    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
-    ports:
-      - "16381:6379"
-    volumes:
-      - ./docker/redis/app-replica/redis.conf:/usr/local/etc/redis/redis.conf:ro
-      - app_redis_replica_1_data:/data
-    depends_on:
-      app-redis-primary:
-        condition: service_healthy
-    networks:
-      - app_network
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
-  app-redis-replica-2:
-    image: redis:7-alpine
-    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
-    ports:
-      - "16382:6379"
-    volumes:
-      - ./docker/redis/app-replica/redis.conf:/usr/local/etc/redis/redis.conf:ro
-      - app_redis_replica_2_data:/data
-    depends_on:
-      app-redis-primary:
-        condition: service_healthy
-    networks:
-      - app_network
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
-  app-redis-sentinel-1:
-    image: redis:7-alpine
-    command:
-      - /bin/sh
-      - -c
-      - cp /etc/redis/sentinel.conf /tmp/sentinel.conf && exec redis-server /tmp/sentinel.conf --sentinel
-    ports:
-      - "36379:26379"
-    volumes:
-      - ./docker/redis/sentinel/sentinel.conf:/etc/redis/sentinel.conf:ro
-    depends_on:
-      app-redis-primary:
-        condition: service_healthy
-      app-redis-replica-1:
-        condition: service_healthy
-      app-redis-replica-2:
-        condition: service_healthy
-    networks:
-      - app_network
-    healthcheck:
-      test: ["CMD", "redis-cli", "-p", "26379", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
-  app-redis-sentinel-2:
-    image: redis:7-alpine
-    command:
-      - /bin/sh
-      - -c
-      - cp /etc/redis/sentinel.conf /tmp/sentinel.conf && exec redis-server /tmp/sentinel.conf --sentinel
-    ports:
-      - "36380:26379"
-    volumes:
-      - ./docker/redis/sentinel/sentinel.conf:/etc/redis/sentinel.conf:ro
-    depends_on:
-      app-redis-primary:
-        condition: service_healthy
-      app-redis-replica-1:
-        condition: service_healthy
-      app-redis-replica-2:
-        condition: service_healthy
-    networks:
-      - app_network
-    healthcheck:
-      test: ["CMD", "redis-cli", "-p", "26379", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
-  app-redis-sentinel-3:
-    image: redis:7-alpine
-    command:
-      - /bin/sh
-      - -c
-      - cp /etc/redis/sentinel.conf /tmp/sentinel.conf && exec redis-server /tmp/sentinel.conf --sentinel
-    ports:
-      - "36381:26379"
-    volumes:
-      - ./docker/redis/sentinel/sentinel.conf:/etc/redis/sentinel.conf:ro
-    depends_on:
-      app-redis-primary:
-        condition: service_healthy
-      app-redis-replica-1:
-        condition: service_healthy
-      app-redis-replica-2:
-        condition: service_healthy
-    networks:
-      - app_network
-    healthcheck:
-      test: ["CMD", "redis-cli", "-p", "26379", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
-  redis-exporter:
-    image: oliver006/redis_exporter:latest
-    environment:
-      - REDIS_ADDR=redis:6379
-    depends_on:
-      - redis
-    networks:
-      - app_network
-
-  app-redis-primary-exporter:
-    image: oliver006/redis_exporter:latest
-    environment:
-      - REDIS_ADDR=app-redis-primary:6379
-    depends_on:
-      app-redis-primary:
-        condition: service_healthy
-    networks:
-      - app_network
-
-  app-redis-replica-1-exporter:
-    image: oliver006/redis_exporter:latest
-    environment:
-      - REDIS_ADDR=app-redis-replica-1:6379
-    depends_on:
-      app-redis-replica-1:
-        condition: service_healthy
-    networks:
-      - app_network
-
-  app-redis-replica-2-exporter:
-    image: oliver006/redis_exporter:latest
-    environment:
-      - REDIS_ADDR=app-redis-replica-2:6379
-    depends_on:
-      app-redis-replica-2:
-        condition: service_healthy
-    networks:
-      - app_network
-
-  app-redis-sentinel-1-exporter:
-    image: oliver006/redis_exporter:latest
-    environment:
-      - REDIS_ADDR=redis://app-redis-sentinel-1:26379
-    depends_on:
-      app-redis-sentinel-1:
-        condition: service_healthy
-    networks:
-      - app_network
-
-  app-redis-sentinel-2-exporter:
-    image: oliver006/redis_exporter:latest
-    environment:
-      - REDIS_ADDR=redis://app-redis-sentinel-2:26379
-    depends_on:
-      app-redis-sentinel-2:
-        condition: service_healthy
-    networks:
-      - app_network
-
-  app-redis-sentinel-3-exporter:
-    image: oliver006/redis_exporter:latest
-    environment:
-      - REDIS_ADDR=redis://app-redis-sentinel-3:26379
-    depends_on:
-      app-redis-sentinel-3:
-        condition: service_healthy
-    networks:
-      - app_network
-
-  redis-insight:
-    image: redis/redisinsight:latest
-    ports:
-      - "5540:5540"
-    networks:
-      - app_network
-    depends_on:
-      - redis
-
   rabbitmq:
-    image: rabbitmq:3-management-alpine
+    image: rabbitmq:3.13.7-management
     ports:
       - "5672:5672"
       - "15672:15672"
-      - "15692:15692" # Prometheus metrics port
+      - "15692:15692"
     environment:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
-    networks:
-      - app_network
-    command: >
-      sh -c "rabbitmq-plugins enable --offline rabbitmq_prometheus &&
-             docker-entrypoint.sh rabbitmq-server"
-    healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "5672"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
-  minio1:
-    image: minio/minio:latest
-    container_name: minio1
-    hostname: minio1
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    volumes:
-      - minio1_data:/data
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-password}
-      MINIO_PROMETHEUS_AUTH_TYPE: "public"
-    command: server http://minio{1...4}/data --console-address ":9001"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-    networks:
-      - app_network
-
-  minio2:
-    image: minio/minio:latest
-    container_name: minio2
-    hostname: minio2
-    volumes:
-      - minio2_data:/data
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-password}
-      MINIO_PROMETHEUS_AUTH_TYPE: "public"
-    command: server http://minio{1...4}/data --console-address ":9001"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-    networks:
-      - app_network
-
-  minio3:
-    image: minio/minio:latest
-    container_name: minio3
-    hostname: minio3
-    volumes:
-      - minio3_data:/data
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-password}
-      MINIO_PROMETHEUS_AUTH_TYPE: "public"
-    command: server http://minio{1...4}/data --console-address ":9001"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-    networks:
-      - app_network
-
-  minio4:
-    image: minio/minio:latest
-    container_name: minio4
-    hostname: minio4
-    volumes:
-      - minio4_data:/data
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-password}
-      MINIO_PROMETHEUS_AUTH_TYPE: "public"
-    command: server http://minio{1...4}/data --console-address ":9001"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-    networks:
-      - app_network
-
-  minio_setup:
-    image: minio/mc:latest
-    depends_on:
-      minio1:
-        condition: service_healthy
-    networks:
-      - app_network
-    entrypoint: >
-      /bin/sh -c "
-      until (/usr/bin/mc config host add myminio http://minio1:9000 admin password) do echo '...waiting...' && sleep 1; done;
-      /usr/bin/mc mb myminio/langfuse;
-      /usr/bin/mc policy set public myminio/langfuse;
-      exit 0;
-      "
-
-  langfuse-worker:
-    image: docker.io/langfuse/langfuse-worker:3
-    restart: always
-    depends_on:
-      citus_coordinator:
-        condition: service_healthy
-      minio1:
-        condition: service_healthy
-      app-redis-primary:
-        condition: service_healthy
-      clickhouse-01:
-        condition: service_healthy
-      clickhouse-02:
-        condition: service_healthy
-      clickhouse-03:
-        condition: service_healthy
-    ports:
-      - 3030:3030
-    environment: &langfuse-worker-env
-      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:4000}
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@citus_coordinator:5432/${POSTGRES_DB}?schema=langfuse
-      PRISMA_SCHEMA_DISABLE_ADVISORY_LOCK: "true"
-      SALT: ${SALT:-mysalt}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-0000000000000000000000000000000000000000000000000000000000000000}
-      TELEMETRY_ENABLED: ${TELEMETRY_ENABLED:-true}
-      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: ${LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES:-false}
-      CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse-01:9000
-      CLICKHOUSE_URL: http://clickhouse-01:8123
-      CLICKHOUSE_USER: default
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-changeme}
-      CLICKHOUSE_CLUSTER_ENABLED: "true"
-      CLICKHOUSE_CLUSTER_NAME: "default"
-      LANGFUSE_USE_AZURE_BLOB: "false"
-      LANGFUSE_USE_OCI_NATIVE_OBJECT_STORAGE: "false"
-      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
-      LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
-      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: admin
-      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: password
-      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://minio1:9000
-      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
-      LANGFUSE_S3_EVENT_UPLOAD_PREFIX: events/
-      LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
-      LANGFUSE_S3_MEDIA_UPLOAD_REGION: auto
-      LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: admin
-      LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: password
-      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://minio1:9000
-      LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
-      LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: media/
-      LANGFUSE_S3_BATCH_EXPORT_ENABLED: "true"
-      LANGFUSE_S3_BATCH_EXPORT_BUCKET: langfuse
-      LANGFUSE_S3_BATCH_EXPORT_PREFIX: exports/
-      LANGFUSE_S3_BATCH_EXPORT_REGION: auto
-      LANGFUSE_S3_BATCH_EXPORT_ENDPOINT: http://minio1:9000
-      LANGFUSE_S3_BATCH_EXPORT_EXTERNAL_ENDPOINT: http://localhost:9000
-      LANGFUSE_S3_BATCH_EXPORT_ACCESS_KEY_ID: admin
-      LANGFUSE_S3_BATCH_EXPORT_SECRET_ACCESS_KEY: password
-      LANGFUSE_S3_BATCH_EXPORT_FORCE_PATH_STYLE: "true"
-      REDIS_HOST: app-redis-primary
-      REDIS_PORT: 6379
-      REDIS_TLS_ENABLED: "false"
-    networks:
-      - app_network
-
-  langfuse-web:
-    image: docker.io/langfuse/langfuse:3
-    restart: always
-    depends_on:
-      citus_coordinator:
-        condition: service_healthy
-      minio1:
-        condition: service_healthy
-      app-redis-primary:
-        condition: service_healthy
-      clickhouse-01:
-        condition: service_healthy
-      clickhouse-02:
-        condition: service_healthy
-      clickhouse-03:
-        condition: service_healthy
-    ports:
-      - 4000:3000 # Use 4000 to avoid conflict with frontend on 3000
-    environment:
-      <<: *langfuse-worker-env
-      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-mysecret}
+      - ./docker/rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
     networks:
       - app_network
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider --timeout=5 http://$(hostname -i):3000 || exit 1"]
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 10s
       timeout: 5s
-      retries: 20
-      start_period: 60s
+      retries: 8
+      start_period: 20s
 
   backend:
     build:
@@ -735,26 +136,17 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       TAVILY_API_KEY: ${TAVILY_API_KEY}
       JWT_SECRET: ${JWT_SECRET}
-      LANGFUSE_HOST: http://langfuse-web:3000
-      CITUS_COORDINATOR_HOST: citus_coordinator
-      CITUS_COORDINATOR_PORT: "5432"
-      CITUS_WORKER_NODES: citus_worker_1:5432,citus_worker_2:5432
+      LANGSMITH_TRACING: ${LANGSMITH_TRACING:-true}
+      LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-fictional-bassoon}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://tempo:4318}
     depends_on:
-      citus_coordinator:
-        condition: service_healthy
-      citus_worker_1:
-        condition: service_healthy
-      citus_worker_2:
+      postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
       pgbouncer:
-        condition: service_healthy
-      minio1:
-        condition: service_healthy
-      langfuse-web:
         condition: service_healthy
     networks:
       - app_network
@@ -767,7 +159,7 @@ services:
       dockerfile: docker/Dockerfile
     command: uv run celery -A src.celery_app worker --loglevel=info
     ports:
-      - "8001:8001" # Prometheus metrics server on 8001
+      - "8001:8001"
     env_file:
       - .env
     environment:
@@ -780,14 +172,13 @@ services:
       DB_URI: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@pgbouncer:6432/${POSTGRES_DB}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       TAVILY_API_KEY: ${TAVILY_API_KEY}
+      JWT_SECRET: ${JWT_SECRET}
       METRICS_PORT: 8001
-      LANGFUSE_HOST: http://langfuse-web:3000
+      LANGSMITH_TRACING: ${LANGSMITH_TRACING:-true}
+      LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-fictional-bassoon}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://tempo:4318}
     depends_on:
-      citus_coordinator:
-        condition: service_healthy
-      citus_worker_1:
-        condition: service_healthy
-      citus_worker_2:
+      postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -795,78 +186,58 @@ services:
         condition: service_healthy
       pgbouncer:
         condition: service_healthy
-      minio1:
-        condition: service_healthy
-      langfuse-web:
-        condition: service_healthy
     networks:
       - app_network
     volumes:
       - logs:/app/logs
 
-  # Monitoring Stack
   loki:
     image: grafana/loki:3.0.0
     ports:
       - "3100:3100"
     command: -config.file=/etc/loki/local-config.yaml
     volumes:
-      - ./docker/monitoring/loki/loki-config.yaml:/etc/loki/local-config.yaml
+      - ./docker/monitoring/loki/loki-config.yaml:/etc/loki/local-config.yaml:ro
       - loki_data:/loki
     networks:
       - app_network
 
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v2.55.1
     ports:
       - "9090:9090"
     volumes:
-      - ./docker/monitoring/prometheus/prometheus.yaml:/etc/prometheus/prometheus.yml
+      - ./docker/monitoring/prometheus/prometheus.yaml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
     command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
     depends_on:
       - backend
       - celery_worker
-      - citus_coordinator_exporter
-      - citus_worker_1_exporter
-      - citus_worker_2_exporter
-      - pgbouncer_exporter
-      - redis-exporter
-      - app-redis-primary-exporter
-      - app-redis-replica-1-exporter
-      - app-redis-replica-2-exporter
-      - app-redis-sentinel-1-exporter
-      - app-redis-sentinel-2-exporter
-      - app-redis-sentinel-3-exporter
-      - minio1
-      - minio2
-      - minio3
-      - minio4
     networks:
       - app_network
 
   tempo:
-    image: grafana/tempo:latest
+    image: grafana/tempo:2.7.2
     user: root
-    command: [ "-config.file=/etc/tempo.yaml" ]
+    command: ["-config.file=/etc/tempo.yaml"]
     volumes:
-      - ./docker/monitoring/tempo/tempo.yaml:/etc/tempo.yaml
+      - ./docker/monitoring/tempo/tempo.yaml:/etc/tempo.yaml:ro
       - tempo_data:/tmp/tempo
     ports:
-      - "3200:3200"   # tempo
-      - "4317:4317"   # otlp grpc
-      - "4318:4318"   # otlp http
+      - "3200:3200"
+      - "4317:4317"
+      - "4318:4318"
     networks:
       - app_network
 
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:11.5.2
     ports:
       - "3001:3000"
     volumes:
-      - ./docker/monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - ./docker/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
       - grafana_data:/var/lib/grafana
     environment:
       - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
@@ -879,11 +250,11 @@ services:
       - app_network
 
   alloy:
-    image: grafana/alloy:latest
+    image: grafana/alloy:v1.5.1
     ports:
       - "12345:12345"
     volumes:
-      - ./docker/monitoring/alloy/config.alloy:/etc/alloy/config.alloy
+      - ./docker/monitoring/alloy/config.alloy:/etc/alloy/config.alloy:ro
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
     command: run --storage.path=/var/lib/alloy/data --server.http.listen-addr=0.0.0.0:12345 /etc/alloy/config.alloy
     depends_on:
@@ -896,26 +267,11 @@ networks:
     driver: bridge
 
 volumes:
-  app_redis_primary_data:
-  app_redis_replica_1_data:
-  app_redis_replica_2_data:
-  clickhouse_01_data:
-  clickhouse_02_data:
-  clickhouse_03_data:
-  clickhouse_keeper_01_data:
-  clickhouse_keeper_02_data:
-  clickhouse_keeper_03_data:
+  postgres_data:
   redis_data:
   rabbitmq_data:
-  citus_coordinator_data:
-  citus_worker_1_data:
-  citus_worker_2_data:
   logs:
   prometheus_data:
   grafana_data:
   loki_data:
   tempo_data:
-  minio1_data:
-  minio2_data:
-  minio3_data:
-  minio4_data:

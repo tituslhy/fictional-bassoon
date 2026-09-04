@@ -34,16 +34,10 @@ from ag_ui.core.events import (
     ToolCallStartEvent,
 )
 from langchain.messages import AIMessage, AIMessageChunk, AnyMessage, ToolMessage
-from langfuse import Langfuse
-from langfuse.langchain import CallbackHandler
 
 from utils.a2ui import A2UIValidationError, build_stream_tree, validate_component_tree
 
 logger = logging.getLogger("backend")
-
-# Initialize a global Langfuse client (singleton).
-# It manages its own background worker threads for batching and uploading traces.
-langfuse_client = Langfuse()
 
 
 class _RunState:
@@ -91,18 +85,16 @@ async def stream_agent_events(agent, request) -> AsyncGenerator[dict, None]:
     ``RUN_ERROR`` is a terminal outcome in its own right). The last ``CUSTOM``
     before ``RUN_FINISHED`` has markdown ``streaming: false``.
     """
-    # langfuse v3+/v4 CallbackHandler takes no per-trace kwargs; request-specific
-    # session and metadata are propagated via the langfuse_-prefixed keys in the
-    # LangChain config metadata below, and the trace name via run_name.
-    langfuse_handler = CallbackHandler()
-
+    # LangSmith traces this run automatically when LANGSMITH_TRACING=true
+    # and LANGSMITH_API_KEY are set (no callback handler required).
+    # thread_id / job_id land on the trace as metadata / session.
     config = {
         "configurable": {"thread_id": request.thread_id},
-        "callbacks": [langfuse_handler],
         "run_name": "deep_agent_chat",
         "metadata": {
-            "langfuse_session_id": request.thread_id,
+            "thread_id": request.thread_id,
             "job_id": request.job_id,
+            "session_id": request.thread_id,
         },
     }
     input_messages = {"messages": [{"role": "user", "content": request.message}]}
@@ -110,7 +102,7 @@ async def stream_agent_events(agent, request) -> AsyncGenerator[dict, None]:
     # AG-UI's run_id identifies this run within thread_id; job_id already
     # serves exactly that purpose (unique per /chat invocation), so it is
     # reused rather than minting a second, parallel ID system (see
-    # citus-thread-id-integrity.md).
+    # citus-thread-id-integrity.md — thread_id remains the one session key).
     run_id = request.job_id
     thread_id = request.thread_id
     state = _RunState()

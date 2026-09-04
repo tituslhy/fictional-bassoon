@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this project is
 
-A full-stack AI chat application that streams agent reasoning, tool calls, and final answers in real time via SSE. The backend is FastAPI + Celery + LangGraph (Python); the frontend is Next.js App Router (TypeScript). Infrastructure is fully Dockerised with PostgreSQL/Citus, Redis Sentinel, RabbitMQ, and an LGTM observability stack.
+A full-stack AI chat application that streams agent reasoning, tool calls, and final answers in real time via SSE. The backend is FastAPI + Celery + LangGraph (Python); the frontend is Next.js App Router (TypeScript). Infrastructure is Dockerised with a single PostgreSQL 16 + PgBouncer, one Redis, one RabbitMQ, and an LGTM observability stack (14 containers total). LLM traces go to LangSmith.
 
 **Protocol-driven architecture (migration landed 2026-09-01, reviewer-verified):** AG-UI for the agent↔frontend event stream (still over SSE, see `sse-transport-lock.md`), A2UI for declarative frontend rendering via a scoped allow-list instead of fixed React components (see `a2ui-no-executable-ui.md`), and A2A exposing the backend as a callable service to other agents (Agent Card at `/.well-known/agent-card.json`, JSON-RPC at `POST /a2a`). The legacy hand-wired SSE vocabulary is fully retired; the AG-UI event types section below is the current vocabulary. See `REWRITE_TASKS.md` for the migration record and remaining open decisions.
 
@@ -107,10 +107,10 @@ hooks phase.
 
 ## Key infrastructure details
 
-- **Database**: PostgreSQL with Citus. Coordinator + 2 workers; FastAPI bootstrap registers the workers and shards `api.threads` / `api.messages` by `thread_id` (`api.users` is a reference table). LangGraph checkpoint tables are distributed by `thread_id` as well, with a local fallback if Citus still rejects LangGraph's `jsonb_each_text` query — see `citus-thread-id-integrity.md`. Connection pooling via PgBouncer on port 6432.
-- **Broker**: RabbitMQ (`BROKER_URL`). Celery result backend is Redis.
-- **Redis**: Sentinel cluster (3 nodes + 3 sentinels) for HA. `redis_pubsub.py` supports Sentinel mode via `REDIS_SENTINEL_HOSTS`.
-- **Observability**: Langfuse for LLM traces, Prometheus + Grafana + Loki + Tempo (LGTM stack). Celery worker starts a Prometheus metrics server on startup.
+- **Database**: Single PostgreSQL 16. FastAPI startup (`db_bootstrap.py`) creates the `api` schema, PostgREST roles, and RLS. Connection pooling via PgBouncer on port 6432. PostgREST still speaks schema `api` as `authenticator`.
+- **Broker**: One RabbitMQ (`BROKER_URL`). Celery result backend is `rpc://`.
+- **Redis**: One instance. `redis_pubsub.py` uses `REDIS_URL` only.
+- **Observability**: LangSmith for LLM traces (`LANGSMITH_API_KEY` + `LANGSMITH_TRACING`). Prometheus + Grafana + Loki + Tempo (LGTM) for infra. Celery worker starts a Prometheus metrics server on startup.
 
 ## Environment variables
 
@@ -121,10 +121,10 @@ Copy `backend/.env.example` to `backend/.env`. Required keys:
 | `OPENAI_API_KEY` | LLM provider |
 | `TAVILY_API_KEY` | Web search tool |
 | `BROKER_URL` | RabbitMQ connection string |
-| `REDIS_URL` | Redis (or Sentinel config) |
+| `REDIS_URL` | Redis pub/sub |
 | `DB_URI` | PostgreSQL via PgBouncer |
 | `JWT_SECRET` | Auth token signing |
-| `LANGFUSE_*` | Observability (optional locally) |
+| `LANGSMITH_API_KEY` | LLM tracing (optional locally; set `LANGSMITH_TRACING=true`) |
 
 Frontend expects `NEXT_PUBLIC_API_URL` in `frontend/.env.local` (default: `http://localhost:8000`).
 
@@ -135,9 +135,8 @@ Frontend expects `NEXT_PUBLIC_API_URL` in `frontend/.env.local` (default: `http:
 | Next.js UI | 3000 |
 | FastAPI | 8000 |
 | Grafana | 3001 |
-| Langfuse | 3030 |
 | Prometheus | 9090 |
-| Redis Insight | 5540 |
+| RabbitMQ management | 15672 |
 | PostgREST | 3002 |
 
 ## SSE event types (AG-UI)

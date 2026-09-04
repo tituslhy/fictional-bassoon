@@ -13,28 +13,25 @@ memory (see ``.claude/skills/protocol-spec-verification/SKILL.md``).
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.routes.agent_card_routes import create_agent_card_routes
 from a2a.server.routes.jsonrpc_routes import create_jsonrpc_routes
-from a2a.server.tasks import InMemoryTaskStore
 from fastapi import APIRouter
 
 from src.protocol.agent_card import RPC_URL_PATH, build_agent_card
 from src.protocol.executor import ChatAgentExecutor
+from src.protocol.task_store import get_task_store
 
 
 def build_a2a_router() -> APIRouter:
     """Build the APIRouter exposing the Agent Card and JSON-RPC endpoints.
 
-    Task state (submitted/working/completed/failed) is stored by the SDK's
-    ``InMemoryTaskStore`` — process-local, in-memory only, not a new Redis or
-    database structure. This means ``tasks/get`` only resolves for tasks
-    handled by *this* backend process since its last restart; it does not
-    survive restarts or work across multiple backend replicas. That is a
-    known limitation, not something papered over with new shared storage —
-    doing so would need a legacy-stack-freeze sign-off.
+    Task state lives in Postgres (``a2a_tasks``) via the SDK's
+    ``DatabaseTaskStore`` when ``DB_URI`` is set, so ``GetTask`` / ``ListTasks``
+    survive restarts and work across backend replicas. Falls back to
+    ``InMemoryTaskStore`` only when ``DB_URI`` is unset (unit tests).
     """
     agent_card = build_agent_card()
     request_handler = DefaultRequestHandler(
         agent_executor=ChatAgentExecutor(),
-        task_store=InMemoryTaskStore(),
+        task_store=get_task_store(),
         agent_card=agent_card,
     )
 
