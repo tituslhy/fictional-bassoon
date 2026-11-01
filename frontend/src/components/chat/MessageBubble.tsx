@@ -1,13 +1,22 @@
 'use client';
 
+import { SurfaceRenderer, type SurfaceActionHandler } from '@/lib/a2ui/SurfaceRenderer';
 import StreamingRenderer from './StreamingRenderer';
 import type { ThreadMessage } from '@/types';
 
 interface MessageBubbleProps {
   message: ThreadMessage;
+  isStreaming?: boolean;
+  onAction?: SurfaceActionHandler;
+  submittedSelections?: ReadonlyMap<string, string>;
 }
 
-export default function MessageBubble({ message }: MessageBubbleProps) {
+export default function MessageBubble({
+  message,
+  isStreaming,
+  onAction,
+  submittedSelections,
+}: MessageBubbleProps) {
   const isUser = message.role === 'user';
 
   if (isUser) {
@@ -35,6 +44,15 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
   return (
     <div className="flex justify-start gap-3">
       <div className="max-w-[85%] flex-1 space-y-1">
+        {(message.a2uiSurfaces || []).map((surface, index) => (
+          <SurfaceRenderer
+            key={index}
+            surface={surface}
+            submittedSelection={submittedSelections?.get(surface.createSurface.surfaceId)}
+            isStreaming={isStreaming}
+            onAction={onAction}
+          />
+        ))}
         <StreamingRenderer
           reasoning={message.reasoning}
           answer={message.content}

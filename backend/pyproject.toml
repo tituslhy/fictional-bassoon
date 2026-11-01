@@ -35,6 +35,7 @@ dependencies = [
     "langfuse>=4.5.1",
     "ag-ui-protocol==0.1.21",
     "a2a-sdk[fastapi]==1.1.2",
+    "jsonschema==4.25.1",
 ]
 
 [tool.pytest.ini_options]

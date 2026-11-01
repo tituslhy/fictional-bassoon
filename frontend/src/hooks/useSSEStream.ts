@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import type { SSEEvent, SSEEventType } from '@/types';
+import type { ChatRequest, SSEEvent, SSEEventType } from '@/types';
 import type { A2UIComponentNode } from '@/lib/a2ui/schema';
 import { validateComponentTree } from '@/lib/a2ui/validator';
 import {
@@ -43,7 +43,7 @@ export function useSSEStream(options: UseSSEStreamOptions) {
   }, []);
 
   const start = useCallback(
-    (body: { message: string; thread_id: string; job_id?: string }) => {
+    (body: ChatRequest) => {
       abortRef.current = new AbortController();
       setIsStreaming(true);
 

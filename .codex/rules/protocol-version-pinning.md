@@ -32,6 +32,12 @@ last twelve months.
   package wins. Flag the mismatch instead of silently reconciling it.
 - Record pinned versions in the table below whenever they change.
 
+## Interactive profile update — 1 November 2026
+
+The user authorized model-generated interactive comparisons and selections on `codex/a2ui`. The current implementation uses the actual v1.0 candidate `createSurface` and renderer `action` envelopes from the existing `@a2ui/web_core@0.10.6` pin. Exact published schemas and license are vendored in `backend/src/a2ui_schemas/`; `jsonschema==4.25.1` validates locally. No A2UI runtime package is installed.
+
+Supported standard components: Text, Column, Row, Card, ChoicePicker, Button. Only a single `/selection` data binding and `select_option` action are supported. This is a constrained interoperable message profile, not full A2UI support. `CUSTOM name=a2ui.surface` transports standard envelopes; old `CUSTOM name=a2ui` lowercase nested trees remain compatibility chat rendering and must not be presented as the full protocol. The historical research note below describes the previous decision and is superseded for this authorized scope.
+
 ## Version log
 
 | Protocol | Package | Version pinned | Date |

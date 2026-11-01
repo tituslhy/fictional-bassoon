@@ -100,8 +100,25 @@ async def delete_thread(thread_id: UUID, user_id: User, pool: Pool):
 async def authorize_chat(request: ChatRequest, user_id: User, pool: Pool) -> ChatRequest:
     # Dependencies run before FastAPI opens the SSE response.
     await require_owned_thread(pool, request.thread_id, user_id)
+    message = request.message
+    if request.a2ui_action is not None:
+        from src.history import load_checkpoint_messages
+        from src.interactive_ui import resolve_action, surface_from_tool
+
+        messages = await load_checkpoint_messages(pool, str(thread_uuid(request.thread_id)))
+        surfaces = [
+            surface for item in messages if (surface := surface_from_tool(item)) is not None
+        ]
+        try:
+            message = resolve_action(request.a2ui_action, surfaces)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
     return request.model_copy(
-        update={"job_id": str(uuid4()), "thread_id": str(thread_uuid(request.thread_id))}
+        update={
+            "job_id": str(uuid4()),
+            "thread_id": str(thread_uuid(request.thread_id)),
+            "message": message,
+        }
     )
 
 

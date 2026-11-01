@@ -1,9 +1,11 @@
+import type { A2UIAction, A2UISurface } from '@/lib/a2ui/surface';
 import type { A2UIComponentNode } from '@/lib/a2ui/schema';
 
 export interface ChatRequest {
   message: string;
   thread_id: string;
   job_id?: string;
+  a2ui_action?: A2UIAction;
 }
 
 export interface ToolCall {
@@ -26,6 +28,8 @@ export interface ThreadMessage {
   error?: string;
   /** Wire A2UI tree from AG-UI CUSTOM name=a2ui. Absent on history hydrate. */
   a2ui?: A2UIComponentNode;
+  a2uiSurfaces?: A2UISurface[];
+  a2uiAction?: A2UIAction;
 }
 
 export interface Thread {

@@ -5,7 +5,7 @@ import { useThreadsContext, useThreadStore } from '@/context/ThreadContext';
 import { useAuth } from '@/context/AuthContext';
 import { useSSEStream } from '@/hooks/useSSEStream';
 import type { SSEEvent, Thread, ThreadMessage } from '@/types';
-import type { A2UIComponentNode } from '@/lib/a2ui/schema';
+import { validateSurface, type A2UIAction } from '@/lib/a2ui/surface';
 import { validateComponentTree } from '@/lib/a2ui/validator';
 import MessageList from './MessageList';
 import MessageInput from './MessageInput';
@@ -24,6 +24,13 @@ export default function Chat() {
   const storeRef = useThreadStore();
   const { activeThreadId, createThread, threads } = useThreadsContext();
   const { token } = useAuth();
+
+  const pendingActionMessageRef = useRef<{ userId: string; action: A2UIAction } | null>(null);
+  const pendingActionRef = useRef<((success: boolean) => void) | null>(null);
+  const settleAction = useCallback((success: boolean) => {
+    pendingActionRef.current?.(success);
+    pendingActionRef.current = null;
+  }, []);
 
   const currentAssistantRef = useRef<ThreadMessage | null>(null);
   const isStreamingRef = useRef(false);
@@ -79,7 +86,16 @@ export default function Chat() {
           } else {
             msgs.push(finalMsg);
           }
-          store.updateThreadMessages(thread.id, msgs);
+          const pendingAction = pendingActionMessageRef.current;
+          const finalized =
+            finalMsg.status === 'done' && pendingAction
+              ? msgs.map(message =>
+                  message.id === pendingAction.userId
+                    ? { ...message, a2uiAction: pendingAction.action }
+                    : message
+                )
+              : msgs;
+          store.updateThreadMessages(thread.id, finalized);
 
           if (thread.title === 'New Thread' || thread.title === 'New chat') {
             const firstUser = msgs.find((m: ThreadMessage) => m.role === 'user');
@@ -90,6 +106,7 @@ export default function Chat() {
             }
           }
         }
+        pendingActionMessageRef.current = null;
         currentAssistantRef.current = null;
         isStreamingRef.current = false;
         streamingTargetThreadIdRef.current = null;
@@ -97,6 +114,7 @@ export default function Chat() {
 
       switch (event.event) {
         case 'RUN_ERROR': {
+          settleAction(false);
           const data = parseEventData<{ message?: string }>(event.data);
           const message = data?.message ?? event.data;
           const assistantMsg = currentAssistantRef.current;
@@ -116,6 +134,7 @@ export default function Chat() {
         }
 
         case 'RUN_FINISHED': {
+          settleAction(true);
           const msg = currentAssistantRef.current;
           if (msg) {
             finalizeRun({ ...msg, status: 'done' as const });
@@ -128,7 +147,24 @@ export default function Chat() {
         }
 
         case 'CUSTOM': {
-          const data = parseEventData<{ name?: string; value?: A2UIComponentNode }>(event.data);
+          const data = parseEventData<{ name?: string; value?: unknown }>(event.data);
+          if (data?.name === 'a2ui.surface') {
+            try {
+              const surface = validateSurface(data.value);
+              updateAssistantMessage(msg => ({
+                ...msg,
+                a2uiSurfaces: [
+                  ...(msg.a2uiSurfaces || []).filter(
+                    item => item.createSurface.surfaceId !== surface.createSurface.surfaceId
+                  ),
+                  surface,
+                ],
+              }));
+            } catch {
+              // Keep ordinary chat available when an unsupported surface arrives.
+            }
+            return;
+          }
           if (data?.name !== 'a2ui' || data.value == null) return;
           try {
             const tree = validateComponentTree(data.value);
@@ -199,11 +235,13 @@ export default function Chat() {
           return;
       }
     },
-    [storeRef]
+    [storeRef, settleAction]
   );
 
   const unlockIfStillStreaming = useCallback(() => {
     if (!isStreamingRef.current) return;
+    settleAction(false);
+    pendingActionMessageRef.current = null;
     const store = storeRef.current;
     const targetThreadId = streamingTargetThreadIdRef.current;
     const msg = currentAssistantRef.current;
@@ -228,13 +266,15 @@ export default function Chat() {
     currentAssistantRef.current = null;
     isStreamingRef.current = false;
     streamingTargetThreadIdRef.current = null;
-  }, [storeRef]);
+  }, [storeRef, settleAction]);
 
   const stream = useSSEStream({
     onEvent: handleMessageEvent,
     token: token,
     onComplete: unlockIfStillStreaming,
     onError: err => {
+      settleAction(false);
+      pendingActionMessageRef.current = null;
       const store = storeRef.current;
       const reliableTargetThreadId = streamingTargetThreadIdRef.current;
 
@@ -274,15 +314,15 @@ export default function Chat() {
   });
 
   const handleSend = useCallback(
-    async (text: string) => {
+    async (text: string, action?: A2UIAction): Promise<boolean> => {
       const store = storeRef.current;
-      if (isStreamingRef.current) return;
+      if (isStreamingRef.current) return false;
 
       let threadId = activeThreadId;
       if (!threadId) {
         threadId = await createThread();
       }
-      if (!threadId) return;
+      if (!threadId) return false;
 
       const userMsg: ThreadMessage = {
         id: crypto.randomUUID(),
@@ -310,9 +350,23 @@ export default function Chat() {
         store.updateThreadMessages(threadId, [...thread.messages, userMsg, assistantMsg]);
       }
 
+      if (action) {
+        return new Promise<boolean>(resolve => {
+          pendingActionRef.current = resolve;
+          pendingActionMessageRef.current = { userId: userMsg.id, action };
+          stream.start({ message: text, thread_id: threadId, a2ui_action: action });
+        });
+      }
       stream.start({ message: text, thread_id: threadId });
+      return true;
     },
     [activeThreadId, stream, storeRef, createThread]
+  );
+
+  const handleAction = useCallback(
+    (action: A2UIAction, label: string) =>
+      handleSend(`I selected ${label}. Please give me a follow-up recommendation.`, action),
+    [handleSend]
   );
 
   const currentThread = threads.find((t: Thread) => t.id === activeThreadId);
@@ -336,7 +390,12 @@ export default function Chat() {
             Web search
           </span>
         </header>
-        <MessageList messages={messages} isStreaming={stream.isStreaming} onPrompt={handleSend} />
+        <MessageList
+          messages={messages}
+          isStreaming={stream.isStreaming}
+          onPrompt={handleSend}
+          onAction={handleAction}
+        />
         <MessageInput onSend={handleSend} isStreaming={stream.isStreaming} isEmpty={isEmpty} />
       </div>
     </div>

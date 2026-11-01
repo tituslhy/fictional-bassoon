@@ -12,6 +12,7 @@ import logging
 import traceback
 import uuid
 from collections.abc import AsyncGenerator
+from typing import Any
 
 from ag_ui.core.events import (
     BaseEvent,
@@ -37,6 +38,7 @@ from langchain.messages import AIMessage, AIMessageChunk, AnyMessage, ToolMessag
 from langfuse import Langfuse
 from langfuse.langchain import CallbackHandler
 
+from src.interactive_ui import surface_from_tool
 from utils.a2ui import A2UIValidationError, build_stream_tree, validate_component_tree
 
 logger = logging.getLogger("backend")
@@ -105,7 +107,10 @@ async def stream_agent_events(agent, request) -> AsyncGenerator[dict, None]:
             "job_id": request.job_id,
         },
     }
-    input_messages = {"messages": [{"role": "user", "content": request.message}]}
+    user_message: dict[str, Any] = {"role": "user", "content": request.message}
+    if request.a2ui_action is not None:
+        user_message["additional_kwargs"] = {"a2ui_action": request.a2ui_action}
+    input_messages = {"messages": [user_message]}
 
     # AG-UI's run_id identifies this run within thread_id; job_id already
     # serves exactly that purpose (unique per /chat invocation), so it is
@@ -149,8 +154,9 @@ async def stream_agent_events(agent, request) -> AsyncGenerator[dict, None]:
                         messages = update.get("messages") if isinstance(update, dict) else None
                         if not messages:
                             continue
-                        for e in _handle_completed_message(messages[-1], state):
-                            yield e
+                        for message in messages:
+                            for e in _handle_completed_message(message, state):
+                                yield e
 
     except Exception as exc:
         errored = True
@@ -372,6 +378,9 @@ def _handle_completed_message(message: AnyMessage, state: _RunState) -> list[dic
                 state.started_tool_calls.pop(tc_id, None)
 
     if isinstance(message, ToolMessage):
+        surface = surface_from_tool(message)
+        if surface is not None:
+            events.append(_to_dict(CustomEvent(name="a2ui.surface", value=surface)))
         content = message.content
         if not isinstance(content, str):
             content = json.dumps(content)

@@ -13,6 +13,8 @@ from langchain.chat_models import init_chat_model
 from langchain_tavily import TavilySearch
 from langgraph.graph.state import CompiledStateGraph
 
+from src.interactive_ui import render_interactive_ui
+
 _ = load_dotenv(find_dotenv())
 
 logger = logging.getLogger("backend")
@@ -23,7 +25,21 @@ def create_agent(checkpointer=None) -> CompiledStateGraph:
     logger.info("Creating agent instance...")
     return create_deep_agent(
         model=init_chat_model(model="openai:gpt-5.4-nano", temperature=0),
-        tools=[TavilySearch(max_results=5)],
+        tools=[TavilySearch(max_results=5), render_interactive_ui],
+        system_prompt=(
+            "You are Relay, a helpful assistant. Use web search when current facts are needed. "
+            "When asked to compare options, offer a selection, or build an interactive interface, "
+            "call render_interactive_ui to create a real interface. Choose the component layout "
+            "and write useful concise content for the user's specific options. For comparisons, "
+            "use a Row of Cards, each containing a Column with Text for its title and tradeoffs; "
+            "follow with one ChoicePicker and a Button. Read the tool's schema restrictions. "
+            "Never print component JSON in your answer. After a successful render, give only a "
+            "brief invitation to choose; don't duplicate all the card contents as prose. "
+            "When the user sends their selected option, use the prior comparison to provide a "
+            "tailored recommendation and practical next steps in text. Do not generate the same "
+            "picker again unless asked. Selection is a request for advice, not permission to "
+            "perform external actions."
+        ),
         checkpointer=checkpointer,
     )
 

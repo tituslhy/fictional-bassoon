@@ -2,12 +2,14 @@
 
 import { useEffect, useRef } from 'react';
 import { Compass, ListChecks, Scale, Search, Sparkles } from 'lucide-react';
+import type { SurfaceActionHandler } from '@/lib/a2ui/SurfaceRenderer';
 import MessageBubble from './MessageBubble';
 import type { ThreadMessage } from '@/types';
 
 interface MessageListProps {
   messages: ThreadMessage[];
   isStreaming: boolean;
+  onAction?: SurfaceActionHandler;
   onPrompt?: (text: string) => void;
 }
 
@@ -30,13 +32,27 @@ const STARTER_PROMPTS = [
   {
     icon: Scale,
     title: 'Compare options',
-    prompt: 'Compare Redis Sentinel vs a single Redis instance for a chat app.',
+    prompt:
+      'Compare FastAPI, Flask, and Django for a small API project, and let me select one for a follow-up recommendation.',
   },
 ] as const;
 
-export default function MessageList({ messages, isStreaming, onPrompt }: MessageListProps) {
+export default function MessageList({
+  messages,
+  isStreaming,
+  onPrompt,
+  onAction,
+}: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  const submittedSelections = new Map<string, string>();
+  for (const message of messages) {
+    const action = message.role === 'user' ? message.a2uiAction?.action : undefined;
+    if (action?.name === 'select_option' && action.context.selection.length === 1) {
+      submittedSelections.set(action.surfaceId, action.context.selection[0]);
+    }
+  }
 
   const lastMessage = messages[messages.length - 1];
   const lastMessageContentLength = lastMessage?.content?.length || 0;
@@ -101,7 +117,12 @@ export default function MessageList({ messages, isStreaming, onPrompt }: Message
       <div className="mx-auto max-w-3xl px-4 py-8">
         {messages.map(msg => (
           <div key={msg.id} className="mb-6 last:mb-0">
-            <MessageBubble message={msg} />
+            <MessageBubble
+              message={msg}
+              isStreaming={isStreaming}
+              onAction={onAction}
+              submittedSelections={submittedSelections}
+            />
           </div>
         ))}
         <div ref={bottomRef} />
