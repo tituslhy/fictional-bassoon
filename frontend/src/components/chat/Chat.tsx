@@ -365,7 +365,11 @@ export default function Chat() {
 
   const handleAction = useCallback(
     (action: A2UIAction, label: string) =>
-      handleSend(`I selected ${label}. Please give me a follow-up recommendation.`, action),
+      handleSend(
+        // Mirrors the server's canonical text (resolve_action); the server ignores this copy.
+        `I selected ${label}. Please give me a tailored recommendation and practical next steps for this option, using our comparison above.`,
+        action
+      ),
     [handleSend]
   );
 

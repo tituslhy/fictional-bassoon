@@ -21,6 +21,9 @@ streaming.py converts LangGraph chunks into AG-UI protocol events
 - REASONING_MESSAGE_START / CONTENT / END — thinking tokens
 - TEXT_MESSAGE_START / CONTENT / END — final answer tokens
 - TOOL_CALL_START / ARGS / END / RESULT — tool invocation + response
+- CUSTOM `a2ui` — 4-type chat-block tree; CUSTOM `a2ui.surface` — standard
+  A2UI v1.0 `createSurface` envelope emitted from a successful
+  `render_interactive_ui` ToolMessage
 
 The legacy vocabulary (reasoning / tool_call / tool_result / answer /
 agent / error / done) is fully retired — do not reintroduce it.

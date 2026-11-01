@@ -59,7 +59,8 @@ describe('chat interactive UI integration', () => {
     fireEvent.click(screen.getByRole('radio', { name: 'FastAPI' }));
     fireEvent.click(screen.getByRole('button', { name: 'Get recommendation' }));
     expect(start).toHaveBeenCalledWith({
-      message: 'I selected FastAPI. Please give me a follow-up recommendation.',
+      message:
+        'I selected FastAPI. Please give me a tailored recommendation and practical next steps for this option, using our comparison above.',
       thread_id: 'thread-1',
       a2ui_action: {
         version: 'v1.0',

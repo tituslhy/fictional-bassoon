@@ -1,3 +1,30 @@
+# Interactive A2UI surfaces
+
+Date: 1 November 2026
+Status: Unreleased workspace changes on `codex/a2ui`
+
+The agent can now author a small interactive interface (comparison cards plus a single-choice list) and receive the user's selection back for a follow-up recommendation. Surfaces are standard A2UI v1.0 candidate `createSurface` envelopes under a deliberately restricted profile.
+
+## Changes
+
+- Added the `render_interactive_ui` tool (`backend/src/interactive_ui.py`). It validates model-authored components against the vendored `@a2ui/web_core@0.10.6` v1.0 schemas (`backend/src/a2ui_schemas/`, Apache-2.0, `jsonschema==4.25.1`, local references only) and a narrower safety profile: `Text`, `Column`, `Row`, `Card`, `ChoicePicker`, `Button`; at most 60 components and depth 12; exactly one picker and one button; only the `/selection` binding and `select_option` action.
+- The tool advertises an explicit per-component input schema to the model (exact `component` constants, required fields, no extra properties), and validation errors name the component, the bad field, and the allowed types. This fixed the first live failure, where the model sent `type` instead of `component`, `children` on a `Card`, and `childId` on a `Button`.
+- Successful tool results stream as AG-UI `CUSTOM` events named `a2ui.surface` and are rehydrated from checkpoint history.
+- `ChatRequest.a2ui_action` carries a standard renderer `action` envelope. The server checks thread ownership first, resolves the action only against surfaces issued in that thread, and replaces the browser's message with canonical text derived from the selected option.
+- Frontend: strict profile validation and an accessible Tailwind renderer (`frontend/src/lib/a2ui/`). Submissions are de-duplicated, selected and sent state survives thread switches and reloads, and failed submissions stay retryable. Tailwind now scans `src/lib` so the renderer's classes are generated.
+
+## Verification
+
+- Backend: **152 tests** passed with environment-file loading disabled. Ruff is clean. Local mypy reports only the two known `src/auth.py` passlib-stub mismatches.
+- Frontend: **227 tests** passed; TypeScript and scoped ESLint are clean.
+- Live runs on the local stack (`openai:gpt-5.4-nano`): the demo prompt produced a valid model-authored surface on the first tool call, both over the API and in the browser. A Django selection sent one `/chat` request and received a tailored reply ending in `RUN_FINISHED`. Thread switches and reloads restored the selection. A forged option and an unissued surface were each rejected with HTTP 422. Screenshots: [surface](images/a2ui-interactive.png), [selection](images/a2ui-selection.png).
+
+## Limitations
+
+Restricted profile only: no `updateComponents`, `updateDataModel`, `deleteSurface`, functions, other bindings, or multi-select, and no `@a2ui/react` renderer. Live retry after a failed submission was not forced; that path is covered by unit tests only.
+
+---
+
 # Local stack reliability and end-to-end verification
 
 Date: 1 November 2026

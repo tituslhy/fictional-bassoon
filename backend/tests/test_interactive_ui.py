@@ -291,3 +291,131 @@ def test_ui_tool_advertises_exact_component_fields_to_model():
     assert all(
         "component" in v["required"] and v["additionalProperties"] is False for v in variants
     )
+
+
+def test_advertised_schema_accepts_valid_tree_and_rejects_captured_model_mistakes():
+    from jsonschema import Draft202012Validator
+
+    from src.interactive_ui import UI_INPUT_SCHEMA
+
+    validator = Draft202012Validator(UI_INPUT_SCHEMA)
+    assert validator.is_valid({"components": components()})
+    # Shapes the live model produced before the schema was explicit.
+    wrong_type_key = components()
+    wrong_type_key[0] = {"id": "root", "type": "Column", "children": ["card", "choices", "submit"]}
+    card_children = components()
+    card_children[1] = {"id": "card", "component": "Card", "children": ["description"]}
+    button_child_id = components()
+    del button_child_id[4]["child"]
+    button_child_id[4]["childId"] = "label"
+    for nodes in (wrong_type_key, card_children, button_child_id):
+        assert not validator.is_valid({"components": nodes})
+
+
+@pytest.mark.parametrize(
+    ("mutation", "expected"),
+    [
+        (
+            lambda c: c[0].update(type=c[0].pop("component")),
+            "Put the type name in 'component', not 'type'",
+        ),
+        (
+            lambda c: c[1].update(children=[c[1].pop("child")]),
+            "Card allows only ['child', 'component', 'id']",
+        ),
+        (lambda c: c[4].update(childId=c[4].pop("child")), "unsupported field(s) ['childId']"),
+        (lambda c: c[0].update(id="main"), "one component must have id 'root'"),
+        (lambda c: c.append({"id": "x", "component": "Text", "text": "x"}), "['x']"),
+        (lambda c: c[1].pop("child"), "missing required field(s) ['child']"),
+    ],
+)
+def test_validation_errors_name_component_and_field(mutation, expected):
+    nodes = components()
+    mutation(nodes)
+    with pytest.raises(ValueError) as error:
+        build_surface(nodes)
+    assert expected in str(error.value)
+
+
+def test_tool_docstring_example_is_a_valid_surface_and_tool_returns_errors_as_data():
+    import re
+
+    from src.interactive_ui import render_interactive_ui
+
+    match = re.search(r"\[\{.*\}\]", render_interactive_ui.description, re.S)
+    assert match is not None
+    example = json.loads(match[0])
+    assert validate_surface(build_surface(example))
+    result = json.loads(render_interactive_ui.invoke({"components": [{"id": "root"}]}))
+    assert "unsupported component" in result["error"]
+
+
+def _deep_tree(depth):
+    nodes = components()
+    nodes[0]["children"] = ["wrap0", "choices", "submit"]
+    for level in range(depth):
+        child = f"wrap{level + 1}" if level + 1 < depth else "card"
+        nodes.append({"id": f"wrap{level}", "component": "Column", "children": [child]})
+    return nodes
+
+
+def test_depth_and_count_bounds():
+    build_surface(_deep_tree(9))  # root -> 9 wrappers -> card -> text is depth 11
+    with pytest.raises(ValueError, match="deeper than 12"):
+        build_surface(_deep_tree(12))
+    many = components()
+    many[0]["children"] = [*many[0]["children"], *[f"t{i}" for i in range(18)]]
+    many += [{"id": f"t{i}", "component": "Text", "text": "x"} for i in range(18)]
+    assert len(many[0]["children"]) == 21
+    with pytest.raises(ValueError, match="1-20 component id"):
+        build_surface(many)
+    with pytest.raises(ValueError, match="1-60"):
+        build_surface(
+            [*components(), *({"id": f"n{i}", "component": "Text", "text": "x"} for i in range(55))]
+        )
+
+
+@pytest.mark.parametrize(
+    "selection",
+    [
+        "fastapi",
+        [1],
+        [None],
+        [{"value": "fastapi"}],
+        [],
+    ],
+)
+def test_rejects_malformed_action_context_types(selection):
+    surface = build_surface(components())
+    event = action(surface)
+    event["action"]["context"] = {"selection": selection}
+    with pytest.raises(ValueError):
+        resolve_action(event, [surface])
+
+
+def test_history_hydrates_multiple_ui_tool_results_on_their_own_turns():
+    first, second = build_surface(components()), build_surface(components())
+
+    def turn(call_id, surface):
+        return [
+            AIMessage(
+                content="",
+                tool_calls=[{"id": call_id, "name": "render_interactive_ui", "args": {}}],
+            ),
+            ToolMessage(
+                content=json.dumps(surface), tool_call_id=call_id, name="render_interactive_ui"
+            ),
+        ]
+
+    history = checkpoint_messages_to_history(
+        [
+            HumanMessage(content="Compare"),
+            *turn("one", first),
+            AIMessage(content="Pick one above."),
+            HumanMessage(content="Compare again"),
+            *turn("two", second),
+        ]
+    )
+    surfaces = [m.model_dump(by_alias=True).get("a2uiSurfaces") for m in history]
+    issued = [s for s in surfaces if s]
+    assert issued == [[first], [second]]

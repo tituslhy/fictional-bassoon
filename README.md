@@ -13,13 +13,14 @@ This project is a showcase of distributed systems engineering applied to AI agen
 | Authenticated conversations | Sign up, log in, create chats, and revisit saved answers | Owner-scoped thread APIs and persisted checkpoint history |
 | Streaming answers | Watch answers arrive while the worker runs | AG-UI output events over SSE; custom chat request shape |
 | Web search | Ask for current information and inspect search activity | Tavily tool; requires configured provider credentials |
-| Declarative chat UI | See tool cards and formatted answers assembled from streamed component trees | Four-component A2UI subset, not arbitrary generated interfaces |
+| Interactive generated UI | Ask for a comparison, get model-authored cards and a choice list, and send your pick back for a tailored follow-up | Restricted A2UI v1.0 profile: `createSurface` with six standard components and one `select_option` action |
+| Declarative chat UI | See tool cards and formatted answers assembled from streamed component trees | Four-component custom tree, separate from the interactive surfaces |
 | Agent-to-agent access | Let another agent discover and invoke this backend | A2A server with JWT authentication; no outbound A2A client |
 | LLM tracing | Inspect prompts, outputs, model generations, token usage, and cost | Langfuse; verified with a real chat |
 | Infrastructure visibility | Inspect queues, cache, object storage, database traces, and metrics | Dashboard screenshots below; Grafana log ingestion remains unverified |
 | Distributed execution and storage | Run agent work through Celery/RabbitMQ and persist API data in Citus | Checkpoint tables currently use the coordinator-local fallback |
 
-Start with the [A2UI demo](#a2ui-demo-web-search-and-rendered-answer), [local screenshots](#verified-local-run--1-november-2026), or [setup instructions](#quick-start-unified-stack). See [release notes](release.md) for the change history and limitations.
+Start with the [interactive A2UI demo](#a2ui-demo-interactive-comparison-and-selection), [local screenshots](#verified-local-run--1-november-2026), or [setup instructions](#quick-start-unified-stack). See [release notes](release.md) for the change history and limitations.
 
 ### Protocol roles
 
@@ -28,10 +29,33 @@ The app is built on three open agent protocols (all version-pinned — see `.cod
 | Protocol | Role here | Where |
 |---|---|---|
 | **AG-UI** (`ag-ui-protocol==0.1.21`) | Agent → frontend event stream over SSE: `RUN_*`, `STEP_*`, `TEXT_MESSAGE_*`, `REASONING_MESSAGE_*`, `TOOL_CALL_*` | `backend/utils/streaming.py` → `frontend/src/hooks/useSSEStream.ts` |
-| **A2UI** (spec v1.0, scoped subset) | Declarative frontend rendering via a validated component allow-list (`column` / `reasoning` / `tool_call` / `markdown`) — no data binding, no executable UI | `frontend/src/lib/a2ui/` |
+| **A2UI** (spec v1.0 candidate, restricted profile) | Model-authored interactive surfaces: standard `createSurface` envelopes (`Text`, `Column`, `Row`, `Card`, `ChoicePicker`, `Button`) validated against the vendored `@a2ui/web_core@0.10.6` schemas, with one `select_option` action routed back to the agent. Chat blocks still use a separate four-type tree (`column` / `reasoning` / `tool_call` / `markdown`). No executable UI | `backend/src/interactive_ui.py`, `frontend/src/lib/a2ui/` |
 | **A2A** (`a2a-sdk[fastapi]==1.1.2`) | Exposes the backend as a callable service for other agents: Agent Card + JSON-RPC, with `taskId` == `job_id` and `contextId` == `thread_id` (one ID system, not three) | `backend/src/protocol/` — `GET /.well-known/agent-card.json`, `POST /a2a` |
 
-## A2UI demo: web search and rendered answer
+## A2UI demo: interactive comparison and selection
+
+Try this prompt in a new chat with an OpenAI key configured:
+
+> Compare FastAPI, Flask, and Django for a small API project, and let me select one for a follow-up recommendation.
+
+The agent calls the `render_interactive_ui` tool with a component list it writes itself. The server validates that list against the vendored A2UI v1.0 schemas and a narrower safety profile, then streams it as an AG-UI `CUSTOM` event named `a2ui.surface` whose value is a standard `createSurface` envelope. The browser validates it again before rendering it with native, accessible controls.
+
+![Interactive A2UI surface: model-authored cards for FastAPI, Flask, and Django with a single-choice list and a Get recommendation button](images/a2ui-interactive.png)
+
+The model chose this layout (an intro line, a `Row` of three `Card`s, a `ChoicePicker` and a primary `Button`); the server did not fill in a template. Selecting **Django** and pressing **Get recommendation** sent one `/chat` request carrying a standard `select_option` action. The server confirmed the user owns the thread, matched the action to a surface it had issued in that thread's checkpoint, and replaced the browser's message with canonical text built from the chosen option. The agent then replied with a Django-specific recommendation.
+
+![After selection: Django chosen, Selection sent, and the agent's tailored follow-up](images/a2ui-selection.png)
+
+Verified live on 1 November 2026 against the local stack (`openai:gpt-5.4-nano`):
+
+- In a fresh API run and a fresh browser run, the model's **first** `render_interactive_ui` call produced a valid surface. The earlier failure (three rejected calls using `type` instead of `component`) was fixed by giving the model an explicit per-component input schema and actionable validation errors.
+- Submitting a selection sent exactly one `/chat` request; the run ended with `RUN_FINISHED`, no `RUN_ERROR`, and no browser console errors or warnings.
+- Switching to another thread and back, and a full page reload, both restored the cards with the selected option and *Selection sent* state.
+- Over the API, an option that was never offered and a surface ID that was never issued were each rejected with HTTP 422 before anything was queued.
+
+**Limitations.** This is a restricted A2UI v1.0 *candidate* profile, not full conformance. Only `createSurface` is emitted; there is no `updateComponents`, `updateDataModel`, or `deleteSurface`. Six components are supported, with exactly one single-choice picker bound to `/selection` and one button whose only action is `select_option`. There are no function calls, other data bindings, remote content, or HTML, and the selection never triggers an external operation. The `@a2ui/react` renderer is not used. Retrying after a failed submission is covered by unit tests but was not forced in a live run. A model may still produce an invalid tree; the tool then returns an error naming the bad component and field so the model can correct itself, and invalid trees are never rendered.
+
+## A2UI demo: web search and rendered answer (chat blocks)
 
 Try this prompt in a new chat with OpenAI and Tavily credentials configured:
 
@@ -41,7 +65,7 @@ The live browser run on 1 November 2026 displayed **three completed Tavily searc
 
 ![A2UI demo in Relay: three completed Tavily tool cards and the streamed FastAPI release answer](images/a2ui-demo.png)
 
-This demonstrates the existing **four-component A2UI subset**: the backend constructs a validated tree from agent output, and the frontend renders it. The fourth supported component, `reasoning`, was not observed in this run. The model does not design arbitrary layouts, forms, buttons, or charts; data binding, actions, and the full A2UI protocol are not implemented. The screenshot records the model's answer, not an independent verification of its release claims.
+This demonstrates the separate **four-component chat-block tree**: the backend constructs a validated tree from agent output, and the frontend renders it. The fourth supported component, `reasoning`, was not observed in this run. In this path the model does not design layouts; model-authored interactive surfaces are covered by the [interactive demo](#a2ui-demo-interactive-comparison-and-selection) above. The screenshot records the model's answer, not an independent verification of its release claims.
 
 ## Architecture
 
@@ -217,6 +241,7 @@ sequenceDiagram
     A->>R: TOOL_CALL_START / ARGS / END / RESULT (e.g. tavily_search)
     A->>R: TEXT_MESSAGE_START / CONTENT / END (answer tokens)
     A->>R: CUSTOM a2ui tree after each mutating event
+    A->>R: CUSTOM a2ui.surface (createSurface) after a render_interactive_ui result
     A->>R: RUN_FINISHED or RUN_ERROR
     R-->>F: each event, in order
     F-->>B: re-emitted as SSE frames
@@ -228,7 +253,7 @@ The same pipeline is reachable by other agents over **A2A**: a JSON-RPC `SendMes
 ## Key Design Decisions
 
 - **Protocol-driven surfaces (AG-UI · A2UI · A2A)**
-  The agent↔frontend stream, the rendering contract, and the service-to-service interface each follow an open protocol instead of a hand-rolled vocabulary. Versions are pinned and verified against the installed packages (`.codex/rules/protocol-version-pinning.md`); the A2UI implementation is a deliberately scoped, non-executable subset (`column`/`reasoning`/`tool_call`/`markdown` only).
+  The agent↔frontend stream, the rendering contract, and the service-to-service interface each follow an open protocol instead of a hand-rolled vocabulary. Versions are pinned and verified against the installed packages (`.codex/rules/protocol-version-pinning.md`); the A2UI implementation is deliberately scoped and non-executable: model-authored `createSurface` envelopes in a six-component profile with a single server-verified `select_option` action, alongside the four-type chat-block tree.
 
 - **SSE over WebSockets**
   Simpler, more reliable streaming model for server → client updates. Leverages standard HTTP and provides automatic keep-alive support via FastAPI's `EventSourceResponse`.
