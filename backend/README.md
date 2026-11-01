@@ -382,3 +382,31 @@ uv run mypy .
 | `logging.ini` | Python logging configuration |
 | `docker/Dockerfile` | Container image definition |
 | `docker-compose.yaml` | Backend stack orchestration |
+
+### Thread access and local startup
+
+Browser clients now use authenticated FastAPI `GET/POST /threads` and
+`PATCH/DELETE /threads/{id}` instead of PostgREST table access. Ownership is
+inferred from the Bearer JWT; clients cannot assign a different user. `/chat`
+and A2A JSON-RPC require the same token. A2A callers must also send
+`A2A-Version: 1.0` and use canonical UUID context IDs. History, chat and catalog
+operations deny missing, deleted and other users' threads.
+
+Thread deletion hides the thread while retaining its owner reservation. This
+prevents reusing a deleted context ID to gain access to saved or in-flight
+checkpoints. It is not physical erasure of checkpoint data.
+
+To prepare a separate local installation **without reading `.env` files**:
+
+```bash
+# From repository root; uses the existing backend Python environment.
+backend/.venv/bin/python scripts/prepare_local_stack.py
+docker compose --env-file /dev/null -p bassoon-local -f handoffs/local-stack/compose.yaml up -d --build
+```
+
+Open `http://localhost:8080`. The generated file uses fresh isolated volumes,
+loopback-only ingress and local credentials saved under ignored `handoffs/`.
+It deliberately omits OpenAI/Tavily credentials, so authentication and thread
+management work, but real AI/search requests require separate configuration.
+Stop it with the same Compose prefix followed by `stop`; use `start` to resume.
+Do not use `down --volumes` if you want to retain accounts and conversations.

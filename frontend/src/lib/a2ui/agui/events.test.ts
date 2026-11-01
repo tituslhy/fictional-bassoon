@@ -55,7 +55,11 @@ describe('parseAGUIStreamEvent', () => {
 
   it('parses CUSTOM a2ui payloads', () => {
     const result = parseAGUIStreamEvent(
-      frame('CUSTOM', { type: 'CUSTOM', name: 'a2ui', value: { id: 'root', component: 'column', children: [] } })
+      frame('CUSTOM', {
+        type: 'CUSTOM',
+        name: 'a2ui',
+        value: { id: 'root', component: 'column', children: [] },
+      })
     );
     expect(result).toEqual({
       type: 'CUSTOM',

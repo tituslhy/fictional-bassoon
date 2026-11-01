@@ -54,3 +54,19 @@ async def test_get_agent_no_uri():
             del os.environ["DB_URI"]
         with pytest.raises(RuntimeError, match="DB_URI environment variable is not set"):
             await src.agent.get_agent()
+
+
+@pytest.mark.asyncio
+async def test_get_agent_closes_pool_when_agent_construction_fails():
+    with (
+        patch.dict(os.environ, {"DB_URI": "postgresql://test"}),
+        patch("psycopg_pool.AsyncConnectionPool") as pool_class,
+        patch("langgraph.checkpoint.postgres.aio.AsyncPostgresSaver") as saver_class,
+        patch("src.agent.create_agent", side_effect=RuntimeError("missing credentials")),
+    ):
+        pool = AsyncMock()
+        pool_class.return_value = pool
+        saver_class.return_value = AsyncMock()
+        with pytest.raises(RuntimeError, match="missing credentials"):
+            await src.agent.get_agent()
+        pool.close.assert_awaited_once()

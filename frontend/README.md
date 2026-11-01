@@ -39,26 +39,26 @@ flowchart LR
 
 Event handling in `Chat.tsx`:
 
-| AG-UI event | Effect on the assistant message |
-|---|---|
-| `REASONING_MESSAGE_CONTENT` | append `delta` to `reasoning` |
-| `TEXT_MESSAGE_CONTENT` | append `delta` to `content` |
-| `TOOL_CALL_START` / `ARGS` / `RESULT` | create / accumulate args on / resolve a tool call, keyed by `toolCallId` |
-| `CUSTOM` (`name: a2ui`) | attach the validated 4-type tree to `message.a2ui` (fallback: `buildLegacyStreamTree`) |
-| `RUN_FINISHED` | finalize with `status: 'done'` |
-| `RUN_ERROR` | finalize with `status: 'error'` + error text — rendered as a red error bubble |
-| lifecycle markers (`RUN_STARTED`, `STEP_*`, `*_START`/`*_END`) | no state change |
+| AG-UI event                                                    | Effect on the assistant message                                                        |
+| -------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `REASONING_MESSAGE_CONTENT`                                    | append `delta` to `reasoning`                                                          |
+| `TEXT_MESSAGE_CONTENT`                                         | append `delta` to `content`                                                            |
+| `TOOL_CALL_START` / `ARGS` / `RESULT`                          | create / accumulate args on / resolve a tool call, keyed by `toolCallId`               |
+| `CUSTOM` (`name: a2ui`)                                        | attach the validated 4-type tree to `message.a2ui` (fallback: `buildLegacyStreamTree`) |
+| `RUN_FINISHED`                                                 | finalize with `status: 'done'`                                                         |
+| `RUN_ERROR`                                                    | finalize with `status: 'error'` + error text — rendered as a red error bubble          |
+| lifecycle markers (`RUN_STARTED`, `STEP_*`, `*_START`/`*_END`) | no state change                                                                        |
 
 ## Tech Stack
 
-| Technology                  | Purpose                          |
-| --------------------------- | -------------------------------- |
-| Next.js 14 (App Router)     | React framework                  |
-| TypeScript (strict mode)    | Type safety                      |
-| Tailwind CSS                | Utility-first styling            |
-| react-markdown + remark-gfm | Sanitized markdown rendering     |
-| Lucide React                | Icon library                     |
-| Custom SSE hook             | AG-UI event consumption          |
+| Technology                  | Purpose                             |
+| --------------------------- | ----------------------------------- |
+| Next.js 14 (App Router)     | React framework                     |
+| TypeScript (strict mode)    | Type safety                         |
+| Tailwind CSS                | Utility-first styling               |
+| react-markdown + remark-gfm | Sanitized markdown rendering        |
+| Lucide React                | Icon library                        |
+| Custom SSE hook             | AG-UI event consumption             |
 | Vitest + Testing Library    | Tests (93.97% stmts / 95.35% lines) |
 
 The A2UI layer intentionally does **not** install `@a2ui/web_core` / `@a2ui/react` — it implements a small subset of the v1.0 spec instead (four allow-listed components: `column`, `reasoning`, `tool_call`, `markdown`). The reasons are recorded in `.claude/rules/protocol-version-pinning.md`.

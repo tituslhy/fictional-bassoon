@@ -207,8 +207,8 @@ The same pipeline is reachable by other agents over **A2A**: a JSON-RPC `SendMes
 - **Celery + RabbitMQ for Orchestration**
   Decouples the long-running agent reasoning process from the HTTP request lifecycle, ensuring the API remains responsive.
 
-- **PostgREST for Automated CRUD**
-  Exposes the Postgres database directly as a REST API for standard data operations (user profiles, message history), removing the need for boilerplate FastAPI CRUD endpoints.
+- **Authenticated thread APIs**
+  FastAPI enforces ownership for thread management, chat, and history. Direct PostgREST access to thread/message tables is revoked; history comes from the LangGraph checkpointer.
 
 - **Redis Sentinel for High Availability**
   Ensures resilient pub/sub event streaming and caching for distributed components.
@@ -328,8 +328,84 @@ Consolidated access through Nginx and direct ports:
 |---|---|---|---|
 | **Chat UI** | [http://localhost](http://localhost) | [http://localhost:3000](http://localhost:3000) | Main Application |
 | **API Docs** | [http://localhost/api/docs](http://localhost/api/docs) | [http://localhost:8000/docs](http://localhost:8000/docs) | API Reference |
-| **Langfuse** | - | [http://localhost:3030](http://localhost:3030) | LLM Tracing & Observability |
-| **PostgREST** | [http://localhost/api/db](http://localhost/api/db) | [http://localhost:3002](http://localhost:3002) | Data Explorer |
+| **Langfuse** | - | [http://localhost:4000](http://localhost:4000) | LLM Tracing & Observability (3030 is the worker, not the UI) |
+| **PostgREST** | [http://localhost/api/db](http://localhost/api/db) | [http://localhost:3002](http://localhost:3002) | REST API; no standalone browser UI |
 | **Grafana** | - | [http://localhost:3001](http://localhost:3001) | Dashboards & Logs |
 | **Prometheus** | - | [http://localhost:9090](http://localhost:9090) | Metrics |
 | **Redis Insight** | - | [http://localhost:5540](http://localhost:5540) | Redis GUI |
+
+
+## Verified local run — 1 November 2026
+
+These screenshots are from the running `bassoon-local` stack, using persisted local test data and a real OpenAI reply. They demonstrate the listed checks, not production readiness or complete failover testing. Its loopback-only ports differ from the standard Compose ports above. Credentials are deliberately excluded from this README; local test login details are in the ignored `handoffs/local-stack/user-accounts.md` file.
+
+| Interface | Running local URL | Result |
+|---|---|---|
+| Relay app | http://localhost:8080 | `user` asked “why is the sky blue?” and received a real reply |
+| Langfuse | http://localhost:3001 | Matching input, output, model generation, tokens and cost visible to `user` |
+| Grafana | http://localhost:3002 | Request-rate and duration charts populated; log panel currently has no data |
+| RabbitMQ Management | http://localhost:15672 | Authenticated overview shows connections, consumers and message activity |
+| Redis Insight | http://localhost:5540 | Connected to app-redis-primary:6379; connection test passed and key browser populated |
+| Prometheus | http://localhost:9090/targets | All 26 scrape targets up |
+| MinIO Console | http://localhost:9001 | Private Langfuse bucket and event folders visible; 12 stored objects |
+| ClickHouse Query | http://localhost:18123/play | Read-only query returns persisted trace/observation tables |
+| Grafana Alloy | http://localhost:12345 | All four configured components report healthy; this alone does not prove logs reach Grafana |
+| FastAPI Swagger UI | http://localhost:18000/docs | Schema and endpoints render on the direct backend route |
+
+The app-prefixed `/api/docs` page currently fails to fetch `/openapi.json`; use the direct documentation URL above. Loki and Tempo are accessed through Grafana, not standalone application frontends. PostgreSQL/Citus, PgBouncer, Redis servers/Sentinels, ClickHouse Keeper, Celery, and exporters do not provide comparable application dashboards. Replica instances share the same service interface and are not duplicated in the gallery.
+
+### Chat and trace evidence
+
+![Relay answering why the sky is blue](images/app.png)
+
+![Langfuse showing the same question, answer, and model generation](images/langfuse.png)
+
+### Monitoring and infrastructure evidence
+
+![Grafana request metrics; its log panel currently shows no data](images/grafana.png)
+
+![RabbitMQ authenticated management overview](images/rabbitmq.png)
+
+![Redis Insight connected to the local Redis primary with a populated key browser](images/redis.png)
+
+![Prometheus target health with all 26 targets up](images/prometheus.png)
+
+![MinIO private Langfuse bucket with event folders and stored objects](images/minio.png)
+
+![ClickHouse query returning trace and observation row counts](images/clickhouse.png)
+
+![Grafana Alloy with four healthy configured components](images/alloy.png)
+
+![FastAPI interactive documentation on the direct backend route](images/api-docs.png)
+
+### A2A Agent Card
+
+The running backend exposes an [Agent Card](http://localhost:18000/.well-known/agent-card.json) advertising A2A 1.0, streaming, chat, web search, and JWT authentication. Other agents can invoke this app through `http://localhost:8080/api/a2a`; this does not mean the app calls other agents through A2A.
+
+Discovery returned HTTP 200, and an unauthenticated A2A request returned HTTP 401. This check did not send a fresh authenticated A2A chat. Task status is process-local and does not survive backend restarts or span replicas.
+
+![Live A2A Agent Card, formatted for readability, showing interfaces, capabilities, authentication, and skills](images/agent-card.png)
+
+### AG-UI over SSE: verified
+
+A live authenticated `POST /api/chat` returned `Content-Type: text/event-stream; charset=utf-8`. All **55 received events** validated against the installed **`ag-ui-protocol==0.1.21`** `Event` schema. SSE `event:` names matched each JSON payload's `type`.
+
+Observed event types: `RUN_STARTED`, `TEXT_MESSAGE_START`, `TEXT_MESSAGE_CONTENT`, `CUSTOM` (A2UI), `TEXT_MESSAGE_END`, and `RUN_FINISHED`. The thread/run IDs matched at both ends, no `RUN_ERROR` occurred, and both conversation messages were read back from checkpoint history.
+
+This verifies AG-UI output events over SSE. The HTTP request still uses the application's `{message, thread_id}` shape, not the full standard `RunAgentInput` contract. Tool-call and reasoning event paths have unit tests but were not exercised by this simple live question. Do not interpret this as verification of every AG-UI capability or plug-and-play compatibility with every AG-UI client.
+
+### Citus: working fallback, not a complete upstream fix
+
+Citus **13.0-1** has an active coordinator and **two active workers**. `api.threads` and `api.messages` are hash-distributed and colocated; `api.users` is a reference table.
+
+The current startup still logs `invalid attnum 6 for relation "jsonb_each_text"` when probing distributed LangGraph checkpoints. Bootstrap then undistributes `checkpoints`, `checkpoint_blobs`, and `checkpoint_writes`; all three are currently **local to the coordinator**. Chat and checkpoint history work with that fallback. The original whole-stack database crash was not reproduced, and the underlying distributed-checkpoint incompatibility is **not resolved**.
+
+Inspect the running state yourself without changing data:
+
+```bash
+docker compose --env-file /dev/null -p bassoon-local \
+  -f handoffs/local-stack/compose.yaml exec -T citus_coordinator \
+  psql -U postgres -d postgres < scripts/check_citus.sql
+```
+
+Expected distribution: `api.threads` / `api.messages` have `partmethod = h`, `api.users` has `partmethod = n`, and the three checkpoint tables show `distributed = f`. This command uses the already-running isolated test stack; it does not read `.env` files or restart services.

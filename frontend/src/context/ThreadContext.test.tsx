@@ -118,18 +118,20 @@ describe('ThreadContext', () => {
     });
 
     expect(result.current.threads[0].title).toBe('New Title');
-    const patchCall = vi.mocked(global.fetch).mock.calls.find(
-      ([url, init]) =>
-        typeof url === 'string' &&
-        url.includes(`/threads?id=eq.${threadId}`) &&
-        typeof init === 'object' &&
-        init !== null &&
-        (init as RequestInit).method === 'PATCH'
-    );
+    const patchCall = vi
+      .mocked(global.fetch)
+      .mock.calls.find(
+        ([url, init]) =>
+          typeof url === 'string' &&
+          url.includes(`/threads/${threadId}`) &&
+          typeof init === 'object' &&
+          init !== null &&
+          (init as RequestInit).method === 'PATCH'
+      );
     expect(patchCall).toBeDefined();
     const body = JSON.parse(String((patchCall?.[1] as RequestInit).body));
     expect(body.title).toBe('New Title');
-    expect(typeof body.updated_at).toBe('string');
+    expect(body).toEqual({ title: 'New Title' });
   });
 
   it('should update thread messages (sync for streaming)', async () => {
@@ -407,7 +409,7 @@ describe('ThreadContext', () => {
         // First call for createThread
         return Promise.resolve({ ok: true });
       }
-      if (url.includes('/threads?id=eq')) {
+      if (url.includes('/threads/') && !url.includes('/history')) {
         // DELETE /threads
         return Promise.reject(new Error('Delete failed'));
       }
@@ -468,7 +470,7 @@ describe('ThreadContext', () => {
   it('should handle update thread title fetch errors gracefully', async () => {
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     global.fetch = vi.fn().mockImplementation(url => {
-      if (url.includes('/threads?id=eq')) {
+      if (url.includes('/threads/') && !url.includes('/history')) {
         // PATCH /threads - simulate error for title update
         return Promise.reject(new Error('Update title failed'));
       }

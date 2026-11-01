@@ -91,3 +91,36 @@ async def require_user_id(
             headers={"WWW-Authenticate": "Bearer"},
         )
     return str(user_id)
+
+
+class A2AAuthenticationMiddleware:
+    """Authenticate SDK-owned Starlette routes and populate its owner scope."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and scope["path"].rstrip("/") == "/a2a":
+            from starlette.authentication import SimpleUser
+            from starlette.datastructures import Headers
+            from starlette.responses import JSONResponse
+
+            raw = Headers(scope=scope).get("authorization", "")
+            scheme, _, token = raw.partition(" ")
+            try:
+                if scheme.lower() != "bearer" or not token:
+                    raise ValueError("missing token")
+                payload = decode_access_token(token)
+                user_id = payload.get("user_id")
+                if not isinstance(user_id, str) or not user_id:
+                    raise ValueError("missing user")
+            except (jwt.PyJWTError, ValueError):
+                response = JSONResponse(
+                    {"detail": "Not authenticated"},
+                    status_code=401,
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+                await response(scope, receive, send)
+                return
+            scope["user"] = SimpleUser(user_id)
+        await self.app(scope, receive, send)

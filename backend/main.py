@@ -20,7 +20,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 from prometheus_fastapi_instrumentator import Instrumentator
 
-from src.auth import create_access_token, hash_password, require_user_id, verify_password
+from src.auth import (
+    A2AAuthenticationMiddleware,
+    create_access_token,
+    hash_password,
+    require_user_id,
+    verify_password,
+)
 from src.db import close_db_pool, get_db_pool
 from src.db_bootstrap import ensure_api_schema
 from src.history import checkpoint_messages_to_history, load_checkpoint_messages
@@ -29,6 +35,8 @@ from src.models.chat_models import ChatRequest, HealthResponse, HistoryResponse
 from src.protocol.executor import IDLE_TIMEOUT_SECONDS
 from src.protocol.router import build_a2a_router
 from src.queue.redis_pubsub import redis_client, subscribe
+from src.threads import authorize_chat, thread_uuid
+from src.threads import router as thread_router
 from src.worker.tasks import run_agent_task
 
 # Configure logging from INI file
@@ -49,6 +57,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+app.add_middleware(A2AAuthenticationMiddleware)
+app.include_router(thread_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -142,20 +152,25 @@ def _idle_timeout_close_events(
             ServerSentEvent(raw_data=ev.model_dump_json(by_alias=True), event=ev.type.value)
         )
     if reasoning_message_id:
-        ev = ReasoningMessageEndEvent(message_id=reasoning_message_id)
+        reasoning_event = ReasoningMessageEndEvent(message_id=reasoning_message_id)
         events.append(
-            ServerSentEvent(raw_data=ev.model_dump_json(by_alias=True), event=ev.type.value)
+            ServerSentEvent(
+                raw_data=reasoning_event.model_dump_json(by_alias=True),
+                event=reasoning_event.type.value,
+            )
         )
     if step_name:
-        ev = StepFinishedEvent(step_name=step_name)
+        step_event = StepFinishedEvent(step_name=step_name)
         events.append(
-            ServerSentEvent(raw_data=ev.model_dump_json(by_alias=True), event=ev.type.value)
+            ServerSentEvent(
+                raw_data=step_event.model_dump_json(by_alias=True), event=step_event.type.value
+            )
         )
     return events
 
 
 @app.post("/chat", response_class=EventSourceResponse)
-async def chat(request: ChatRequest):
+async def chat(request: Annotated[ChatRequest, Depends(authorize_chat)]):
     """Stream agent events via SSE.
 
     Enqueues a Celery task to run the agent, then subscribes to the
@@ -164,8 +179,6 @@ async def chat(request: ChatRequest):
     (``RUN_FINISHED`` or ``RUN_ERROR`` — see ``ag-ui-protocol``'s
     ``EventType``, pinned per ``protocol-version-pinning.md``).
     """
-    # Ensure job_id is present
-    request = request.with_job_id()
     job_id = request.job_id
 
     logger.info("received chat request for job_id=%s thread_id=%s", job_id, request.thread_id)
@@ -262,11 +275,12 @@ async def thread_history(
     checkpoint → ``{"messages": []}``. Does not expose checkpoint tables
     through PostgREST and does not construct the agent.
     """
+    thread_id = str(thread_uuid(thread_id))
     pool = await get_db_pool()
     async with pool.connection() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
-                "SELECT 1 FROM api.threads WHERE id = %s AND user_id = %s",
+                "SELECT 1 FROM api.threads WHERE id = %s AND user_id = %s AND deleted_at IS NULL",
                 (thread_id, user_id),
             )
             owned = await cur.fetchone()

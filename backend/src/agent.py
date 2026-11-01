@@ -5,6 +5,7 @@ Constructs the shared CompiledStateGraph lazily.
 
 import logging
 import os
+from typing import Any
 
 from deepagents import create_deep_agent
 from dotenv import find_dotenv, load_dotenv
@@ -41,6 +42,8 @@ async def get_agent() -> CompiledStateGraph:
     # Import DB dependencies
     try:
         from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+        from psycopg import AsyncConnection
+        from psycopg.rows import dict_row
         from psycopg_pool import AsyncConnectionPool
     except ImportError as e:
         logger.error("Failed to import database dependencies: %s", e)
@@ -55,11 +58,16 @@ async def get_agent() -> CompiledStateGraph:
 
     # Initialize DB pool and checkpointer
     logger.info("Initializing Async Postgres checkpointer...")
-    pool = AsyncConnectionPool(
-        conninfo=db_uri, kwargs={"autocommit": True, "prepare_threshold": 0}, open=False
+    pool: AsyncConnectionPool[AsyncConnection[dict[str, Any]]] = AsyncConnectionPool(
+        conninfo=db_uri,
+        kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row},
+        open=False,
     )
-    await pool.open()
-    checkpointer = AsyncPostgresSaver(pool)
-    await checkpointer.setup()
-
-    return create_agent(checkpointer=checkpointer)
+    try:
+        await pool.open()
+        checkpointer = AsyncPostgresSaver(pool)
+        await checkpointer.setup()
+        return create_agent(checkpointer=checkpointer)
+    except BaseException:
+        await pool.close()
+        raise

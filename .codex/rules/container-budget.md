@@ -1,0 +1,30 @@
+---
+paths:
+  - "backend/docker-compose.yaml"
+  - "docker/docker-compose.yml"
+  - "frontend/docker-compose.yaml"
+---
+
+# Container Budget
+
+## Context
+
+`backend/docker-compose.yaml` currently defines 45 services — 3-node
+ClickHouse + 3-node ClickHouse Keeper, 3-node Citus, dual PgBouncer/PostgREST,
+a 7-piece Redis Sentinel HA setup with matching Prometheus exporters, 4-node
+MinIO, Langfuse worker + web, the full LGTM stack, RabbitMQ, plus the backend
+and celery_worker services themselves. `docker/docker-compose.yml` adds nginx
+and the frontend service on top of that. That's already a lot of blast radius
+for three protocol additions to land on.
+
+## Hard rules
+
+- Any new service added to a compose file in this rewrite comes with a
+  one-line justification, in the same commit, for why an existing service
+  (Redis, RabbitMQ, the Postgres/Citus cluster) can't absorb the
+  responsibility instead.
+- A2A service exposure does not default to a new container. Wire it into the
+  existing `backend` FastAPI service (same app, new route/mount) unless
+  there's a concrete reason — process isolation, differing scaling needs —
+  that Titus has explicitly signed off on.
+- No new service ships without that justification and sign-off.

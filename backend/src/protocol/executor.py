@@ -46,6 +46,7 @@ from a2a.utils.errors import UnsupportedOperationError
 
 from src.models.chat_models import ChatRequest
 from src.queue.redis_pubsub import subscribe
+from src.threads import authorize_agent_thread
 from src.worker.tasks import run_agent_task
 
 logger = logging.getLogger("backend")
@@ -100,6 +101,8 @@ class ChatAgentExecutor(AgentExecutor):
                 )
             )
             return
+
+        thread_id = await authorize_agent_thread(context, thread_id)
 
         chat_request = ChatRequest(message=user_input, thread_id=thread_id, job_id=task_id)
 

@@ -1,0 +1,26 @@
+---
+paths:
+  - "backend/main.py"
+  - "frontend/src/hooks/useSSEStream.ts"
+---
+
+# SSE Transport Lock
+
+## Context
+
+`backend/main.py`'s `/chat` endpoint streams via `EventSourceResponse` /
+`ServerSentEvent` (from `fastapi.sse`), and `frontend/src/hooks/useSSEStream.ts`
+consumes it with a hand-rolled `fetch` + `ReadableStream` reader — not the
+browser's native `EventSource`, not WebSockets. This was a deliberate choice,
+not a default anyone fell into.
+
+## Hard rules
+
+- AG-UI's event stream rides on this same SSE transport. Do not swap it for
+  WebSockets, even if an AG-UI SDK example or reference client defaults to WS.
+- Any AG-UI client wiring on the frontend integrates with the existing
+  `useSSEStream.ts` fetch/reader pattern rather than replacing it with
+  `EventSource` or a WS client, unless Titus explicitly signs off on the swap.
+- If an AG-UI feature (e.g. bidirectional human-in-the-loop interrupts) turns
+  out to genuinely require a persistent duplex connection that SSE can't
+  provide, stop and flag it — don't resolve it by quietly switching transports.

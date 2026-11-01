@@ -103,6 +103,7 @@ BOOTSTRAP_STATEMENTS = [
     END
     $$;
     """,
+    "ALTER TABLE api.threads ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ",
     "GRANT anon TO authenticator",
     "GRANT web_user TO authenticator",
     "GRANT USAGE ON SCHEMA api TO anon",
@@ -120,8 +121,8 @@ BOOTSTRAP_STATEMENTS = [
     END
     $$;
     """,
-    "GRANT ALL ON api.threads TO web_user",
-    "GRANT ALL ON api.messages TO web_user",
+    "REVOKE ALL ON api.threads FROM web_user, anon, PUBLIC",
+    "REVOKE ALL ON api.messages FROM web_user, anon, PUBLIC",
     "ALTER TABLE api.users ENABLE ROW LEVEL SECURITY",
     """
     DO $$

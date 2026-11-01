@@ -1,0 +1,35 @@
+---
+paths:
+  - "frontend/src/**"
+---
+
+# Frontend Stack Conventions
+
+## Stack
+
+- Next.js App Router (confirmed: frontend/src/app/) — Next.js 14.2.35, React 18
+- TypeScript strict mode
+- Tailwind for styling only — globals.css exists solely for Tailwind
+  directives and font declarations, not general custom CSS
+- No new component libraries unless explicitly requested
+- lucide-react is the current icon set — reuse it rather than adding another
+
+## Backend integration
+
+- One backend service handles both auth and chat, via
+  `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`). There is no
+  separate `crud_backend` / `agents_backend` split — that language was in
+  the old frontend.md and didn't match the actual single-service backend.
+  Don't reintroduce it.
+- Auth: AuthContext.tsx talks to /auth/signup and /auth/login
+- Chat: useSSEStream.ts talks to POST /chat — see sse-transport-lock.md for
+  the transport contract and a2ui-no-executable-ui.md for how agent output
+  gets rendered once it arrives
+
+## Hard rules
+
+- Don't add a CSS file outside globals.css — Tailwind utility classes only.
+- Don't introduce a second backend base URL / client config without
+  confirming with Titus first.
+- New components under frontend/src/components/ follow the existing
+  folder-per-feature pattern (chat/, sidebar/).

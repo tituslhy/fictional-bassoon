@@ -18,6 +18,10 @@ from a2a.types.a2a_pb2 import (
     AgentCard,
     AgentInterface,
     AgentSkill,
+    HTTPAuthSecurityScheme,
+    SecurityRequirement,
+    SecurityScheme,
+    StringList,
 )
 from a2a.utils.constants import PROTOCOL_VERSION_1_0, TransportProtocol
 
@@ -94,6 +98,14 @@ def build_agent_card() -> AgentCard:
             )
         ],
         capabilities=capabilities,
+        security_schemes={
+            "bearer": SecurityScheme(
+                http_auth_security_scheme=HTTPAuthSecurityScheme(
+                    scheme="bearer", bearer_format="JWT"
+                )
+            )
+        },
+        security_requirements=[SecurityRequirement(schemes={"bearer": StringList()})],
         default_input_modes=["text/plain"],
         default_output_modes=["text/plain"],
         skills=[chat_skill, web_search_skill],

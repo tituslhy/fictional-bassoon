@@ -25,8 +25,7 @@ interface ThreadContextType {
 
 const ThreadContext = createContext<ThreadContextType | undefined>(undefined);
 
-const DB_BASE = process.env.NEXT_PUBLIC_DB_URL || 'http://localhost:3002';
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || '/api';
 
 export function ThreadProvider({ children }: { children: ReactNode }) {
   const [threads, setThreadsState] = useState<Thread[]>([]);
@@ -76,14 +75,11 @@ export function ThreadProvider({ children }: { children: ReactNode }) {
 
     const fetchThreads = async () => {
       try {
-        const res = await fetch(
-          `${DB_BASE}/threads?select=id,title,updated_at&user_id=eq.${user.id}&order=updated_at.desc`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
+        const res = await fetch(`${API_BASE}/threads`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
         if (res.ok) {
           const data = await res.json();
           const formatted: Thread[] = data.map(
@@ -140,16 +136,14 @@ export function ThreadProvider({ children }: { children: ReactNode }) {
 
     if (token) {
       try {
-        const res = await fetch(`${DB_BASE}/threads`, {
+        const res = await fetch(`${API_BASE}/threads`, {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${token}`,
             'Content-Type': 'application/json',
-            Prefer: 'return=representation',
           },
           body: JSON.stringify({
             id: tempId,
-            user_id: user?.id,
             title: 'New chat',
           }),
         });
@@ -160,7 +154,7 @@ export function ThreadProvider({ children }: { children: ReactNode }) {
     }
 
     return tempId;
-  }, [token, user]);
+  }, [token]);
 
   const deleteThread = useCallback(
     async (id: string) => {
@@ -178,7 +172,7 @@ export function ThreadProvider({ children }: { children: ReactNode }) {
 
       if (token) {
         try {
-          await fetch(`${DB_BASE}/threads?id=eq.${id}`, {
+          await fetch(`${API_BASE}/threads/${id}`, {
             method: 'DELETE',
             headers: { Authorization: `Bearer ${token}` },
           });
@@ -204,13 +198,13 @@ export function ThreadProvider({ children }: { children: ReactNode }) {
 
       if (token) {
         try {
-          await fetch(`${DB_BASE}/threads?id=eq.${threadId}`, {
+          await fetch(`${API_BASE}/threads/${threadId}`, {
             method: 'PATCH',
             headers: {
               Authorization: `Bearer ${token}`,
               'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ title, updated_at: new Date().toISOString() }),
+            body: JSON.stringify({ title }),
           });
         } catch (err) {
           console.error('Error updating thread title:', err);

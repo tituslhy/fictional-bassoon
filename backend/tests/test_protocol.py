@@ -17,7 +17,11 @@ def mock_context():
     context.task_id = "test_task_123"
     context.context_id = "test_thread_456"
     context.get_user_input.return_value = "What is the weather?"
-    return context
+    with patch(
+        "src.protocol.executor.authorize_agent_thread",
+        new=AsyncMock(side_effect=lambda context, thread_id: thread_id),
+    ):
+        yield context
 
 
 @pytest.fixture

@@ -141,7 +141,7 @@ async def test_history_requires_bearer():
     from main import app
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        response = await ac.get("/threads/thread-1/history")
+        response = await ac.get("/threads/00000000-0000-0000-0000-000000000001/history")
     assert response.status_code == 401
 
 
@@ -152,7 +152,9 @@ async def test_history_404_when_not_owned():
     pool = _mock_pool(owned=False)
     with patch("main.get_db_pool", return_value=pool):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            response = await ac.get("/threads/thread-1/history", headers=_auth_header())
+            response = await ac.get(
+                "/threads/00000000-0000-0000-0000-000000000001/history", headers=_auth_header()
+            )
     assert response.status_code == 404
 
 
@@ -166,7 +168,9 @@ async def test_history_empty_checkpoint():
         patch("main.load_checkpoint_messages", new_callable=AsyncMock, return_value=[]),
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            response = await ac.get("/threads/thread-1/history", headers=_auth_header())
+            response = await ac.get(
+                "/threads/00000000-0000-0000-0000-000000000001/history", headers=_auth_header()
+            )
     assert response.status_code == 200
     assert response.json() == {"messages": []}
 
@@ -185,7 +189,9 @@ async def test_history_maps_checkpoint_messages():
         patch("main.load_checkpoint_messages", new_callable=AsyncMock, return_value=raw),
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            response = await ac.get("/threads/thread-1/history", headers=_auth_header())
+            response = await ac.get(
+                "/threads/00000000-0000-0000-0000-000000000001/history", headers=_auth_header()
+            )
     assert response.status_code == 200
     body = response.json()
     assert len(body["messages"]) == 2
@@ -243,7 +249,7 @@ async def test_history_401_invalid_token():
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         response = await ac.get(
-            "/threads/thread-1/history",
+            "/threads/00000000-0000-0000-0000-000000000001/history",
             headers={"Authorization": "Bearer not-a-jwt"},
         )
     assert response.status_code == 401
@@ -257,7 +263,7 @@ async def test_history_401_token_missing_user_id():
     token = create_access_token({"email": "a@b.com"})
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         response = await ac.get(
-            "/threads/thread-1/history",
+            "/threads/00000000-0000-0000-0000-000000000001/history",
             headers={"Authorization": f"Bearer {token}"},
         )
     assert response.status_code == 401
@@ -270,7 +276,7 @@ async def test_history_401_non_bearer_scheme():
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         response = await ac.get(
-            "/threads/thread-1/history",
+            "/threads/00000000-0000-0000-0000-000000000001/history",
             headers={"Authorization": "Basic abc"},
         )
     assert response.status_code == 401

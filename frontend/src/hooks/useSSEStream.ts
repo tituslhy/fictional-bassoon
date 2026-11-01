@@ -9,7 +9,7 @@ import {
 } from '@/lib/a2ui/agui/streamState';
 import { parseAGUIStreamEvent } from '@/lib/a2ui/agui/events';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || '/api';
 
 /** Terminal AG-UI event types — either one ends the run (never both, see
  * backend/utils/streaming.py's stream_agent_events docstring). */

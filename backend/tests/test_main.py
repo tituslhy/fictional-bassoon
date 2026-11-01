@@ -6,6 +6,18 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from main import app
+from src.models.chat_models import ChatRequest
+from src.threads import authorize_chat
+
+
+@pytest.fixture(autouse=True)
+def authorized_stream_request():
+    async def authorized(request: ChatRequest):
+        return request.with_job_id()
+
+    app.dependency_overrides[authorize_chat] = authorized
+    yield
+    app.dependency_overrides.pop(authorize_chat, None)
 
 
 @pytest.mark.asyncio
