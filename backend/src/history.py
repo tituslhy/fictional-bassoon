@@ -17,6 +17,7 @@ from langchain.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.messages import BaseMessage
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
+from src.interactive_ui import resolve_action, surface_from_tool
 from src.models.chat_models import HistoryMessage, HistoryToolCall
 
 logger = logging.getLogger("backend")
@@ -83,6 +84,9 @@ def _attach_tool_result(messages: list[HistoryMessage], tool_message: ToolMessag
         for tc in prev.tool_calls:
             if tc.id == tool_call_id:
                 tc.result = result
+                surface = surface_from_tool(tool_message)
+                if surface is not None:
+                    prev.a2ui_surfaces.append(surface)
                 return
         return
 
@@ -98,8 +102,19 @@ def checkpoint_messages_to_history(raw: list[Any] | None) -> list[HistoryMessage
     if not raw:
         return out
 
+    pending_action = None
+    pending_user = None
     for item in raw:
         if isinstance(item, HumanMessage):
+            pending_action = None
+            pending_user = None
+            candidate = item.additional_kwargs.get("a2ui_action")
+            if candidate is not None:
+                try:
+                    resolve_action(candidate, [s for m in out for s in m.a2ui_surfaces])
+                    pending_action = candidate
+                except ValueError:
+                    pass
             out.append(
                 HistoryMessage(
                     id=_message_id(item),
@@ -109,7 +124,10 @@ def checkpoint_messages_to_history(raw: list[Any] | None) -> list[HistoryMessage
                     status="done",
                 )
             )
+            pending_user = out[-1]
         elif isinstance(item, AIMessage):
+            if pending_user is not None and pending_action is not None and message_text(item):
+                pending_user.a2ui_action = pending_action
             out.append(
                 HistoryMessage(
                     id=_message_id(item),

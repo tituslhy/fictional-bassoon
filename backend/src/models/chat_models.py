@@ -4,10 +4,11 @@ Pydantic shapes only — mapping from checkpoint messages lives in
 ``src/history.py``, not here.
 """
 
+import json
 import uuid
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic.alias_generators import to_camel
 
 
@@ -17,6 +18,14 @@ class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=10_000)
     thread_id: str = "default"
     job_id: str | None = None
+    a2ui_action: dict[str, Any] | None = None
+
+    @field_validator("a2ui_action")
+    @classmethod
+    def bounded_action(cls, value):
+        if value is not None and len(json.dumps(value)) > 4000:
+            raise ValueError("UI action is too large")
+        return value
 
     def with_job_id(self) -> "ChatRequest":
         """Return a copy with a generated job_id."""
@@ -64,6 +73,8 @@ class HistoryMessage(BaseModel):
     status: Literal["streaming", "done", "error"] = "done"
     error: str | None = None
     a2ui: dict[str, Any] | None = None
+    a2ui_surfaces: list[dict[str, Any]] = Field(default_factory=list, alias="a2uiSurfaces")
+    a2ui_action: dict[str, Any] | None = Field(default=None, alias="a2uiAction")
 
 
 class HistoryResponse(BaseModel):

@@ -5,6 +5,10 @@ paths:
 
 # Deep Agent Scope Lock
 
+## Authorized interactive extension — 1 November 2026
+
+The user explicitly approved adding `render_interactive_ui` alongside Tavily and a system prompt that calls it for comparisons and choices. This is the narrow exception to the original single-tool scope below. Keep the model and infrastructure unchanged; do not add unrelated tools.
+
 ## Context
 
 `backend/src/agent.py` builds the agent via `create_deep_agent` (from the

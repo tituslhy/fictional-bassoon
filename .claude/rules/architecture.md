@@ -26,6 +26,9 @@ run_agent_task → run_agent_and_stream() (async)
   load_checkpoint_messages(); not in src/models/
 - utils/streaming.py — LangGraph event conversion to AG-UI dicts (incl. CUSTOM a2ui)
 - utils/a2ui.py — 4-type A2UI tree build + validate (used by streaming.py)
+- src/interactive_ui.py — `render_interactive_ui` tool, its model-facing input
+  schema, standard A2UI v1.0 `createSurface` validation (against the vendored
+  schemas in src/a2ui_schemas/), and issued-surface `select_option` resolution
 - src/models/ — Pydantic models only (auth_models.py, chat_models.py),
   nothing else
 - src/celery_app.py — Celery config only

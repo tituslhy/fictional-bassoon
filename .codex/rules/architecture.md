@@ -22,6 +22,7 @@ run_agent_task → run_agent_and_stream() (async)
   in src/auth.py — do not deepen inline auth here)
 - src/agent.py — agent construction via create_agent()/get_agent() functions,
   not a module-level constant
+- src/interactive_ui.py — validate standard A2UI surfaces, UI tool, and issued-surface actions
 - src/history.py — checkpointer → HistoryMessage mapper +
   load_checkpoint_messages(); not in src/models/
 - utils/streaming.py — LangGraph event conversion to AG-UI dicts (incl. CUSTOM a2ui)
