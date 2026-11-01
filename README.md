@@ -380,6 +380,8 @@ The app-prefixed `/api/docs` page currently fails to fetch `/openapi.json`; use 
 
 ### A2A Agent Card
 
+This app acts as an **A2A server**: external agents call it. Calling other A2A agents would require a separate client integration.
+
 The running backend exposes an [Agent Card](http://localhost:18000/.well-known/agent-card.json) advertising A2A 1.0, streaming, chat, web search, and JWT authentication. Other agents can invoke this app through `http://localhost:8080/api/a2a`; this does not mean the app calls other agents through A2A.
 
 Discovery returned HTTP 200, and an unauthenticated A2A request returned HTTP 401. This check did not send a fresh authenticated A2A chat. Task status is process-local and does not survive backend restarts or span replicas.
