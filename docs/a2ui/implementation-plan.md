@@ -23,4 +23,4 @@ Target the existing pinned `@a2ui/web_core@0.10.6` published `src/v1_0/schemas` 
 4. Integration: schema conformance, ownership/invalid action tests, all existing suites, lint/type checks, live browser generation → selection → agent reply → reload.
 5. Update README and screenshots with the actual interactive flow and limitations. Keep local services up; recreate only app components needed to load changes, preserving provider overrides and volumes.
 
-Do not recreate the removed migration checklist. User's existing README and a2ui-demo.png changes are preserved. No automatic commit or push required for this feature request.
+Do not recreate the removed migration checklist. No automatic commit or push required for this feature request.

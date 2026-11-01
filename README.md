@@ -55,18 +55,6 @@ Verified live on 1 November 2026 against the local stack (`openai:gpt-5.4-nano`)
 
 **Limitations.** This is a restricted A2UI v1.0 *candidate* profile, not full conformance. Only `createSurface` is emitted; there is no `updateComponents`, `updateDataModel`, or `deleteSurface`. Six components are supported, with exactly one single-choice picker bound to `/selection` and one button whose only action is `select_option`. There are no function calls, other data bindings, remote content, or HTML, and the selection never triggers an external operation. The `@a2ui/react` renderer is not used. Retrying after a failed submission is covered by unit tests but was not forced in a live run. A model may still produce an invalid tree; the tool then returns an error naming the bad component and field so the model can correct itself, and invalid trees are never rendered.
 
-## A2UI demo: web search and rendered answer (chat blocks)
-
-Try this prompt in a new chat with OpenAI and Tavily credentials configured:
-
-> Search the web for the latest FastAPI release. Show the version, summarize three changes in bullet points, and link to the official release notes.
-
-The live browser run on 1 November 2026 displayed **three completed Tavily search cards** followed by a formatted answer with a release-notes link. The captured HTTP 200 stream contained **608 events**, including **301 `CUSTOM` events named `a2ui`** with `column`, `tool_call`, and `markdown` components. Tool start, arguments, completion, and result events were observed; the run ended with `RUN_FINISHED` and no `RUN_ERROR`.
-
-![A2UI demo in Relay: three completed Tavily tool cards and the streamed FastAPI release answer](images/a2ui-demo.png)
-
-This demonstrates the separate **four-component chat-block tree**: the backend constructs a validated tree from agent output, and the frontend renders it. The fourth supported component, `reasoning`, was not observed in this run. In this path the model does not design layouts; model-authored interactive surfaces are covered by the [interactive demo](#a2ui-demo-interactive-comparison-and-selection) above. The screenshot records the model's answer, not an independent verification of its release claims.
-
 ## Architecture
 
 ```mermaid
@@ -448,7 +436,7 @@ A live authenticated `POST /api/chat` returned `Content-Type: text/event-stream;
 
 Observed event types: `RUN_STARTED`, `TEXT_MESSAGE_START`, `TEXT_MESSAGE_CONTENT`, `CUSTOM` (A2UI), `TEXT_MESSAGE_END`, and `RUN_FINISHED`. The thread/run IDs matched at both ends, no `RUN_ERROR` occurred, and both conversation messages were read back from checkpoint history.
 
-This verifies AG-UI output events over SSE. The HTTP request still uses the application's `{message, thread_id}` shape, not the full standard `RunAgentInput` contract. Tool-call and reasoning event paths were not exercised by this simple sky question. The separate A2UI web-search demo above subsequently exercised live tool-call events; reasoning events remain unverified in a live run. Do not interpret this as verification of every AG-UI capability or plug-and-play compatibility with every AG-UI client.
+This verifies AG-UI output events over SSE. The HTTP request still uses the application's `{message, thread_id}` shape, not the full standard `RunAgentInput` contract. Tool-call and reasoning event paths were not exercised by this simple sky question. Later live runs on 1 November 2026 (a Tavily web search and the [interactive A2UI demo](#a2ui-demo-interactive-comparison-and-selection)) exercised tool-call events; reasoning events remain unverified in a live run. Do not interpret this as verification of every AG-UI capability or plug-and-play compatibility with every AG-UI client.
 
 ### Citus: working fallback, not a complete upstream fix
 
