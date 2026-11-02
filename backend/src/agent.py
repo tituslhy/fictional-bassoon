@@ -24,7 +24,7 @@ def create_agent(checkpointer=None) -> CompiledStateGraph:
     """Create a new agent instance with the given checkpointer."""
     logger.info("Creating agent instance...")
     return create_deep_agent(
-        model=init_chat_model(model="openai:gpt-5.4-nano", temperature=0),
+        model=init_chat_model(model="openai:gpt-6-luna", temperature=0, use_responses_api=True),
         tools=[TavilySearch(max_results=5), render_interactive_ui],
         system_prompt=(
             "You are Relay, a helpful assistant. Use web search when current facts are needed. "
